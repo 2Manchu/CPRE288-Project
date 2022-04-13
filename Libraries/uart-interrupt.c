@@ -41,7 +41,7 @@ void uart_interrupt_init(void){
 
   //enable UART1 Rx and Tx on port B pins
   //NOTE: In hex because each entry for the port control register accepts a 4 bit number (found on pg650 of datasheet)
-  GPIO_PORTB_PCTL_R = 0x00000011;
+  GPIO_PORTB_PCTL_R |= 0x00000011;
 
   //calculate baud rate
   uint16_t iBRD = 8; //use equations

@@ -1,6 +1,12 @@
 # Prerequisites
 *.d
 
+#IntelliJ
+*.idea
+*.settings
+*.ccsproject
+*.cproject
+
 # Object files
 *.o
 *.ko
@@ -50,3 +56,6 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+/cmake-build-debug
+/Debug

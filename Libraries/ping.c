@@ -53,7 +53,7 @@ void ping_trigger (void) {
     TIMER3_CTL_R &= 0b0;
     TIMER3_IMR_R &= 0xBFF;
     // Disable alternate function (disconnect timer from port pin) and set as output
-    GPIO_PORTB_AFSEL_R &= 0b0111;
+    GPIO_PORTB_AFSEL_R &= 0b11110111;
     GPIO_PORTB_DIR_R |= 0b1000;
 
     //Set high for 5 microseconds to trigger start
