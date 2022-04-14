@@ -10,6 +10,7 @@
 #include "Libraries/servo.h"
 #include "Libraries/uart-interrupt.h"
 
+/*
 void main() {
     int i;
     timer_init();
@@ -45,3 +46,4 @@ void main() {
     timer_waitMillis(40000);
 
 }
+*/

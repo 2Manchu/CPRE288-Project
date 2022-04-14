@@ -6,8 +6,12 @@
 #include "lcd.h"
 #include "Timer.h"
 #include "uart-interrupt.h"
-#include "cyBot_Scan.h"
+#include "adc.h"
+#include "button.h"
 #include "open_interface.h"
+#include "ping.h"
+#include "servo.h"
+#include "scan.h"
 
 #define LEFT_TURN_OFFSET 12
 #define RIGHT_TURN_OFFSET 14
@@ -27,6 +31,7 @@ int dataPoints[181][2];
 int objects[15][4] = { '\0' };
 
 int move_forward(oi_t *sensor_data, int distance_mm) {
+    //TODO: ADD CODE TO DETECT IF WE ARE DROPPING OR ON THE TAPE
     oi_setWheels(150, 150);
     int sum = 0;
 
@@ -113,15 +118,15 @@ void updateDisplay(char display[], char keyPress) {
     lcd_printf(display);
 }
 
-void scanSweep(cyBOT_Scan_t scan) {
+void scanSweep(scanInstance scan) {
     //Scan Angle Range
-    cyBOT_Scan(0, &scan);
+    doScan(0, &scan);
     timer_waitMillis(1500);
     int currAngle;
     //Make a 180 degree sweep of the field
     for (currAngle = 0; currAngle <= 180; currAngle += 2) {
         int i;
-        cyBOT_Scan(currAngle, &scan);
+        doScan(currAngle, &scan);
 
         //Send the angle we just scanned to putty
         char angle[4] = { '\0' };
@@ -134,7 +139,7 @@ void scanSweep(cyBOT_Scan_t scan) {
 
         //Send the initial ping distance to putty
         char ping[5] = { '\0' };
-        float pingDist = scan.sound_dist;
+        float pingDist = scan.pingDist;
         //Read PING distance into data points
         dataPoints[currAngle][0] = pingDist;
         sprintf(ping, "%f", pingDist);
@@ -147,7 +152,7 @@ void scanSweep(cyBOT_Scan_t scan) {
 
         //Send the IR distance to putty
         char ir[5] = { '\0' };
-        int irDist = scan.IR_raw_val;
+        int irDist = scan.irRaw;
         dataPoints[currAngle][1] = irDist;
         sprintf(ir, "%d", irDist);
         for (i = 0; i < 5; i++) {
@@ -159,12 +164,11 @@ void scanSweep(cyBOT_Scan_t scan) {
 }
 
 
-int findObjects(cyBOT_Scan_t scan) {
+int findObjects(scanInstance scan) {
     int objectStartDeg, objectEndDeg, angularWidth;
     double arcLength;
     int i, j;
     double sum = 0;
-    int avg = 0;
     int objNum = 0;
 
     //Go through the data points to find objects
@@ -201,24 +205,11 @@ int findObjects(cyBOT_Scan_t scan) {
     //IMPROVING THE OBJECT DETECTION
     //Take an average of distance readings to objects that we've identified since ping sensor is not consistent
     for (i = 0; i < objNum; i++) {
-        sum = 0;
-        double last_reading = -1;
-        int timesGoodData = 0;
-
-        for (j = 0; j < 10; j++) {
-            cyBOT_Scan(objects[i][0], &scan);
-            //Exclude the first result from the scan cause it's kinda wacked out????
-            if (j != 0 && abs(last_reading - scan.sound_dist) < 10) {
-                sum += scan.sound_dist;
-                timesGoodData++;
-            }
-            last_reading = scan.sound_dist;
-        }
-        avg = (int)sum / timesGoodData;
-        objects[i][1] = avg;
+        doScan(objects[i][0], &scan);
+        objects[i][1] = scan.irDist;
 
         //If we get a bad distance do the scan again
-        if (avg == 0 || avg > 100) {
+        if (scan.irDist > 100) {
             i--;
         }
 
@@ -226,7 +217,7 @@ int findObjects(cyBOT_Scan_t scan) {
 
     //Send out info to putty regarding the detected objects
     char angle[4] = { '\0' };
-    char pingDist[5] = { '\0' };
+    char irDist[5] = { '\0' };
     char linWidth[3] = { '\0' };
     char header[39] = "AnglePos\tPING Distance\t\tLinear Width\r\n";
 
@@ -237,7 +228,7 @@ int findObjects(cyBOT_Scan_t scan) {
     for (j = 0; j < objNum; j++) {
         if (objects[j][3] > 4) {
             sprintf(angle, "%d", objects[j][0]);
-            sprintf(pingDist, "%d", objects[j][1]);
+            sprintf(irDist, "%d", objects[j][1]);
             sprintf(linWidth, "%d", objects[j][2]);
 
             for (i = 0; i < 4; i++) {
@@ -247,7 +238,7 @@ int findObjects(cyBOT_Scan_t scan) {
             uart_sendChar('\t');
 
             for (i = 0; i < 5; i++) {
-                uart_sendChar(pingDist[i]);
+                uart_sendChar(irDist[i]);
             }
             uart_sendChar('\t');
             uart_sendChar('\t');
@@ -263,49 +254,26 @@ int findObjects(cyBOT_Scan_t scan) {
     return objNum;
 }
 
-int findSmallestObject(int numObjs) {
-    int i;
-    int smallestObjInd = -1;
-    int smallest;
-    if (objects[0][0] != '\0') {
-        smallest = 10000;
-        smallestObjInd = 0;
-    }
-
-    for (i = 0; i < numObjs; i++) {
-        if (objects[i][2] < smallest && objects[i][3] > 4) {
-            smallest = objects[i][2];
-            smallestObjInd = i;
-        }
-    }
-
-    return smallestObjInd;
-}
-
-
-
 void main() {
-    //initialise the timer
     timer_init();
-    //initialize lcd
     lcd_init();
-    //initialize UART
+    adc_init();
+    button_init();
+    ping_init();
+    servo_init();
     uart_interrupt_init();
-    //Servo calibration
-    cyBOT_init_Scan(0b0111);
-    //cyBOT_SERVO_cal();
 
-    cyBOT_Scan_t scan;
-
-    //Servo left/right positional values
-    //Calibrated for CyBot 4 at the moment
-    right_calibration_value = 322000;
-    left_calibration_value = 1293250;
+    //Servo calibration actions, uncomment when doing new robot
+    //servo_calibrate();
+    set_left(35600);
+    set_right(7500);
 
     //Create an open interface object
     oi_t *robot = oi_alloc();
     //Initialize it
     oi_init(robot);
+
+    scanInstance scan;
 
     char display[21];
 
@@ -318,12 +286,11 @@ void main() {
 
     scanSweep(scan);
     int numObjs = findObjects(scan);
-    int smallestObj = findSmallestObject(numObjs);
 
     #pragma clang diagnostic push
     #pragma ide diagnostic ignored "EndlessLoop"
     while(1) {
-        //TODO: Add code for checking to see if we have actually found a smallest object in the field
+        //TODO: NAVIGATE BETWEEN OBJECTS, AND GO FORWARD IF NONE FOUND. ADD APPROPRIATE ACTIONS IF WE HIT A LINE OR CLIFF
         //Adjust position of object relative to robot, negative is to right, positive to left
         int objPos = objects[smallestObj][0] - 90;
         //if object is to the left
@@ -335,12 +302,11 @@ void main() {
             turnRightAngle(robot, objPos);
         }
 
-        int distanceToMove = (objects[smallestObj][1]*10 - 185);  //TODO: previously this was - 120 but want to see if the fixed average code eliminates the need for this
+        int distanceToMove = (objects[smallestObj][1]*10);  //TODO: previously this was - 120 but want to see if the fixed average code eliminates the need for this
         int moveStatus = move_forward(robot, distanceToMove);
         int isAvoiding = 0;
 
         while (1) {
-            //Figure out some way to distinguish a
             if (!isAvoiding && moveStatus == 0)  {
                 goto STOPWAITAMINUTE;
             }
@@ -349,8 +315,8 @@ void main() {
                 scanSweep(scan);
                 numObjs = findObjects(scan);
                 smallestObj = findSmallestObject(numObjs);
-                //There's an offset here since the ping sensor seems to overestimate distance quite significantly
-                distanceToMove = (objects[smallestObj][1]*10) - 130;
+                //(OLD) There's an offset here since the ping sensor seems to overestimate distance quite significantly
+                distanceToMove = (objects[smallestObj][1]*10);
                 objPos = objects[smallestObj][0] - 90;
 
                 if (objPos > 0)  {
