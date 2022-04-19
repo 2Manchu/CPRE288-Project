@@ -48,6 +48,10 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
         else if (sensor_data->bumpRight && sensor_data->bumpLeft) {
             return 3;
         }
+        //TODO: FIND THRESHOLD VALUE FOR HOLE AND TAPE, maybe do wheeldrops
+        else if (sensor_data->cliffFrontLeftSignal > NULL || sensor_data->cliffFrontRightSignal > NULL || sensor_data->cliffLeftSignal > NULL || sensor_data->cliffRightSignal > NULL) {
+            return 4;
+        }
     }
     oi_setWheels(0,0);
     return 0;
@@ -113,6 +117,15 @@ int turnRightAngle(oi_t *sensor_data, int angleToTurnTo) {
     return 0;
 }
 
+void eraseObjects() {
+    //Currently hardcoded for size of objects array, adjust for size of array
+    for(int i = 0; i < 15; ++i) {
+        for(int j = 0; j < 4; ++j) {
+            objects[i][j] = '\0';
+        }
+    }
+}
+
 void updateDisplay(char display[], char keyPress) {
     sprintf(display, "Key Pressed: %c", keyPress);
     lcd_printf(display);
@@ -163,8 +176,8 @@ void scanSweep(scanInstance scan) {
     }
 }
 
-
 int findObjects(scanInstance scan) {
+    eraseObjects();
     int objectStartDeg, objectEndDeg, angularWidth;
     double arcLength;
     int i, j;
@@ -278,6 +291,7 @@ void main() {
     char display[21];
 
     //Print the table header for the initial sweep of the field
+    //TODO: IF WE ARE DOING OUTPUT AS CSV WE'LL HAVE TO CHANGE THIS
     char header[39] = "Degrees\t\tPING Distance (cm)\tIR Value\r\n";
     int i;
     for (i = 0; i <= 38; i++) {
@@ -304,17 +318,17 @@ void main() {
 
         int distanceToMove = (objects[smallestObj][1]*10);  //TODO: previously this was - 120 but want to see if the fixed average code eliminates the need for this
         int moveStatus = move_forward(robot, distanceToMove);
-        int isAvoiding = 0;
+        int inDestination = 0;
 
         while (1) {
-            if (!isAvoiding && moveStatus == 0)  {
-                goto STOPWAITAMINUTE;
+            //TODO: EDIT THIS BECAUSE IT WILL TERMINATE PROGRAM IF IT DOESN'T HIT ANYTHING THE FIRST TIME
+            if (inDestination && moveStatus == 0)  {
+                goto PARK;q
             }
             if (isAvoiding && moveStatus == 0) {
                 isAvoiding = 0;
                 scanSweep(scan);
                 numObjs = findObjects(scan);
-                smallestObj = findSmallestObject(numObjs);
                 //(OLD) There's an offset here since the ping sensor seems to overestimate distance quite significantly
                 distanceToMove = (objects[smallestObj][1]*10);
                 objPos = objects[smallestObj][0] - 90;
@@ -363,7 +377,7 @@ void main() {
 
     }
 
-    STOPWAITAMINUTE:
+    PARK:
     //Stop robot, show exit indication, quit OI
     oi_setWheels(0, 0);
     updateDisplay(display, '!');

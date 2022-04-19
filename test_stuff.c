@@ -9,9 +9,12 @@
 #include "Libraries/ping.h"
 #include "Libraries/servo.h"
 #include "Libraries/uart-interrupt.h"
+#include "Libraries/open_interface.h"
 
-/*
+
 void main() {
+
+
     int i;
     timer_init();
     lcd_init();
@@ -21,7 +24,7 @@ void main() {
     servo_init();
     uart_interrupt_init();
 
-
+    /*
     //servo_calibrate();
     set_left(35600);
     set_right(7500);
@@ -45,5 +48,10 @@ void main() {
     
     timer_waitMillis(40000);
 
+    */
+    oi_t *robot = oi_alloc();
+    while (1) {
+        lcd_printf(robot->cliffLeft);
+    }
+
 }
-*/
