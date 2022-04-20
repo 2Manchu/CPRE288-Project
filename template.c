@@ -30,6 +30,12 @@ int dataPoints[181][2];
  */
 int objects[15][4] = { '\0' };
 
+/*
+ * 0 if there is no skinny post in range of scan
+ * 1 if skinny post has been found
+ */
+int skinnyPostFound = 0;
+
 int move_forward(oi_t *sensor_data, int distance_mm) {
     //TODO: ADD CODE TO DETECT IF WE ARE DROPPING OR ON THE TAPE
     oi_setWheels(150, 150);
@@ -40,20 +46,26 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
         sum += sensor_data->distance;
 
         if (sensor_data->bumpLeft) {
+            oi_setWheels(0,0);
             return 1;
         }
         else if (sensor_data->bumpRight) {
+            oi_setWheels(0,0);
             return 2;
         }
-        else if (sensor_data->bumpRight && sensor_data->bumpLeft) {
-            return 3;
-        }
-        //TODO: FIND THRESHOLD VALUE FOR HOLE AND TAPE, maybe do wheeldrops
-        else if (sensor_data->cliffFrontLeftSignal > NULL || sensor_data->cliffFrontRightSignal > NULL || sensor_data->cliffLeftSignal > NULL || sensor_data->cliffRightSignal > NULL) {
+        //If we have a left sensor detection
+        else if (sensor_data->cliffFrontLeftSignal > 2500 || sensor_data->cliffFrontLeftSignal < 500 ||
+        sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
+            oi_setWheels(0,0);
             return 4;
         }
+        //If we have a right sensor detection
+        else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
+                sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
+            oi_setWheels(0,0);
+            return 5;
+        }
     }
-    oi_setWheels(0,0);
     return 0;
 }
 
@@ -209,7 +221,10 @@ int findObjects(scanInstance scan) {
             int radius = (dataPoints[objectStartDeg][0] + dataPoints[objectEndDeg][0]) / 2;
             arcLength = 2.0 * M_PI * (double)radius * ((double)angularWidth / 360.0);
             objects[objNum][2] = (int)arcLength;
-
+            //TODO Change 10 to the width of the skinny posts
+            if(objects[objNum][2] < 10) {
+                skinnyPostFound = 1;
+            }
             objNum++;
             i += 2;
         }
@@ -289,6 +304,8 @@ void main() {
     scanInstance scan;
 
     char display[21];
+    int isAvoiding = 0;
+    int moveStatus = -1;
 
     //Print the table header for the initial sweep of the field
     //TODO: IF WE ARE DOING OUTPUT AS CSV WE'LL HAVE TO CHANGE THIS
@@ -298,13 +315,10 @@ void main() {
         uart_sendChar(header[i]);
     }
 
-    scanSweep(scan);
-    int numObjs = findObjects(scan);
-
     #pragma clang diagnostic push
     #pragma ide diagnostic ignored "EndlessLoop"
-    while(1) {
         //TODO: NAVIGATE BETWEEN OBJECTS, AND GO FORWARD IF NONE FOUND. ADD APPROPRIATE ACTIONS IF WE HIT A LINE OR CLIFF
+        //TODO: If we see a skinny pillar in the findObjects, then we set a special return code in the findObjects function, and have a goto that initiates the parking sequence
         //Adjust position of object relative to robot, negative is to right, positive to left
         int objPos = objects[smallestObj][0] - 90;
         //if object is to the left
@@ -316,66 +330,51 @@ void main() {
             turnRightAngle(robot, objPos);
         }
 
-        int distanceToMove = (objects[smallestObj][1]*10);  //TODO: previously this was - 120 but want to see if the fixed average code eliminates the need for this
-        int moveStatus = move_forward(robot, distanceToMove);
-        int inDestination = 0;
-
+        //Repeatedly scan, find objects, and move forward accordingly. If bump sensors are triggered, stop, back
+        //up, and turn, but don't move forward. Repeat sequence and essentially bounce around testing area until
+        //cliff sensors pick up blue tape that mark the end zone, which will then trigger the parking sequence
         while (1) {
-            //TODO: EDIT THIS BECAUSE IT WILL TERMINATE PROGRAM IF IT DOESN'T HIT ANYTHING THE FIRST TIME
-            if (inDestination && moveStatus == 0)  {
-                goto PARK;q
-            }
-            if (isAvoiding && moveStatus == 0) {
-                isAvoiding = 0;
-                scanSweep(scan);
-                numObjs = findObjects(scan);
-                //(OLD) There's an offset here since the ping sensor seems to overestimate distance quite significantly
-                distanceToMove = (objects[smallestObj][1]*10);
-                objPos = objects[smallestObj][0] - 90;
+            eraseObjects();
+            scanSweep(scan);
+            int numObjs = findObjects(scan);
+            //TODO skinny post found sequence
+            if(skinnyPostFound == 1) {
 
-                if (objPos > 0)  {
-                    turnLeftAngle(robot, objPos);
-                }
-                //if object is to the right
-                else if (objPos < 0 ) {
-                    turnRightAngle(robot, objPos);
-                }
-
-                moveStatus = move_forward(robot, distanceToMove);
-            }
-            //Robot hit something on the left
-            while (moveStatus == 1) {
-                isAvoiding = 1;
-                move_backward(robot, 30);
-                //Negative value for turning since that's the way I programmed it
-                turnRightAngle(robot, -65);
-                moveStatus = move_forward(robot, 245);
-                if (moveStatus == 0) {
-                    turnLeftAngle(robot, 80);
-                }
-            }
-            //The robot hit something on the right
-            while (moveStatus == 2) {
-                isAvoiding = 1;
-                move_backward(robot, 37);
-                turnLeftAngle(robot, 65);
-                moveStatus = move_forward(robot, 245);
-                //Negative value for turning since that's the way I programmed it
-                if (moveStatus == 0) {
-                    turnRightAngle(robot, 80);
-                }
-            }
-            //Hit something head on
-            while (moveStatus == 3) {
-                isAvoiding = 1;
-                move_backward(robot, 45);
-                moveStatus == 0;
             }
 
+            //Special cases if there's no gaps to go
+            if (numObjs == 0) {
+                continue;
+            }
+            else if (numObjs == 1) {
+                if (objects[0][0] <= 90) {
+                    turnRightAngle(robot, -30);
+                }
+                else {
+                    turnLeftAngle(robot, 30);
+                }
+            }
+            //After this we'll have to use the objects array and number of objects, plus a helper function to find the distance between the two objects
+            //Then we find the angle to it using the above code snippet and get distance, then move to the gap
+            //If we get no objects, move forward an amount and scan again
+            //If we get one object then we can either move to the left or right of it and scan again
+            moveStatus = move_forward(robot, 500);
+            if (moveStatus == 1) {
+                move_backward(robot, 150);
+                turnRightAngle(robot, -90);
+            } else if (moveStatus == 2) {
+                move_backward(robot, 150);
+                turnLeftAngle(robot, 90);
+            }
+                //We have a left side cliff detection
+            else if (moveStatus == 4) {
+                move_backward(robot, 150);
+                turnRightAngle(robot, -90);
+            } else if (moveStatus == 5) {
+                move_backward(robot, 150);
+                turnLeftAngle(robot, 90);
+            }
         }
-
-
-    }
 
     PARK:
     //Stop robot, show exit indication, quit OI
