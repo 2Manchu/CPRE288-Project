@@ -130,6 +130,7 @@ int findObjects(scanInstance scan) {
             arcLength = 2.0 * M_PI * (double)radius * ((double)angularWidth / 360.0);
             objects[objNum][2] = (int)arcLength;
             //TODO Change 10 to the width of the skinny posts
+            //TODO: DO SOME TESTING TO FIND THE SIZE OF SKINNY BOIS
             if(objects[objNum][2] < 10) {
                 skinnyPostFound = 1;
             }
@@ -189,7 +190,6 @@ int findObjects(scanInstance scan) {
     return objNum;
 }
 
-//TODO FIND GAPS FUNCTION
 int findGaps(int numObjs) {
     int i;
     for(i = 0; i < numObjs - 1; ++i) {
@@ -246,21 +246,26 @@ void main() {
         uart_sendChar(header[i]);
     }
 
+    while (!goCmd) {};  //busywait on the command to go from the uart controller
+
     #pragma clang diagnostic push
     #pragma ide diagnostic ignored "EndlessLoop"
         //TODO: NAVIGATE BETWEEN OBJECTS, AND GO FORWARD IF NONE FOUND. ADD APPROPRIATE ACTIONS IF WE HIT A LINE OR CLIFF
         //TODO: If we see a skinny pillar in the findObjects, then we set a special return code in the findObjects function, and have a goto that initiates the parking sequence
-        //Adjust position of object relative to robot, negative is to right, positive to left
+        //TODO: FINISH THE LABELS MANUAL AND AUTONOMOUS TO ALLOW FOR OVERRIDE CONTROLS FROM THE BASE STATION
 
         //Repeatedly scan, find objects, and move forward accordingly. If bump sensors are triggered, stop, back
         //up, and turn, but don't move forward. Repeat sequence and essentially bounce around testing area until
         //cliff sensors pick up blue tape that mark the end zone, which will then trigger the parking sequence
-        while (1) {
+    AUTONOMOUS_MODE:
+        while (goCmd) {
+            if (manualMode) goto MANUAL_MODE;
+            //Adjust position of object relative to robot, negative is to right, positive to left
             eraseObjects();
             int numGaps = 0;
             scanSweep(scan);
             int numObjs = findObjects(scan);
-            //TODO skinny post found sequence
+            //TODO skinny post found sequence -- use goto
             if(skinnyPostFound == 1) {
 
             }
@@ -280,32 +285,43 @@ void main() {
             else {
                 numGaps = findGaps(numObjs);
             }
+            //TODO: Move into gaps
             //After this we'll have to use the objects array and number of objects, plus a helper function to find the distance between the two objects
             //Then we find the angle to it using the above code snippet and get distance, then move to the gap
-            //If we get no objects, move forward an amount and scan again
-            //If we get one object then we can either move to the left or right of it and scan again
+            //We should also ensure before moving that we fit through the gap by checking gaps[1] against our width
             moveStatus = move_forward(robot, 500);
             if (moveStatus == 1) {
-                move_backward(robot, 150);
                 turnRightAngle(robot, -90);
-            } else if (moveStatus == 2) {
-                move_backward(robot, 150);
+            }
+            else if (moveStatus == 2) {
                 turnLeftAngle(robot, 90);
             }
-                //We have a left side cliff detection
+            //We have a left side cliff detection
             else if (moveStatus == 4) {
-                move_backward(robot, 150);
                 turnRightAngle(robot, -90);
-            } else if (moveStatus == 5) {
-                move_backward(robot, 150);
+            }
+            //We have a right side cliff detection
+            else if (moveStatus == 5) {
                 turnLeftAngle(robot, 90);
             }
         }
 
-    PARK:
-    //Stop robot, show exit indication, quit OI
-    oi_setWheels(0, 0);
-    updateDisplay(display, '!');
-    oi_free(robot);
+    MANUAL_MODE:
+    while (goCmd) {
+        if (!manualMode) goto AUTONOMOUS_MODE;
+        if ()
+    }
+
+
+
+    //Just added an if statement here to prevent it from executing this code when goCmd is no longer true.
+    //This will occur when the user issues presses 'o' while the program is still in normal execution and the destination has not been found
+    if (goCmd) {
+        PARK:
+        //Stop robot, show exit indication, quit OI
+        oi_setWheels(0, 0);
+        updateDisplay(display, '!');
+        oi_free(robot);
+    }
 }
 #pragma clang diagnostic pop

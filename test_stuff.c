@@ -16,7 +16,6 @@
 #define IR_THRESHOLD_VAL 850
 
 int move_forward(oi_t *sensor_data, int distance_mm) {
-    //TODO: ADD CODE TO DETECT IF WE ARE DROPPING OR ON THE TAPE
     oi_setWheels(150, 150);
     int sum = 0;
 

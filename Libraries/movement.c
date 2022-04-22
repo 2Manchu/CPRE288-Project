@@ -9,7 +9,6 @@
 #define IR_THRESHOLD_VAL 850
 
 int move_forward(oi_t *sensor_data, int distance_mm) {
-    //TODO: ADD CODE TO DETECT IF WE ARE DROPPING OR ON THE TAPE
     oi_setWheels(150, 150);
     int sum = 0;
 
@@ -19,22 +18,26 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
 
         if (sensor_data->bumpLeft) {
             oi_setWheels(0,0);
+            move_backward(sensor_data, 150);
             return 1;
         }
         else if (sensor_data->bumpRight) {
             oi_setWheels(0,0);
+            move_backward(sensor_data, 150);
             return 2;
         }
-            //If we have a left sensor detection
+        //If we have a left sensor detection
         else if (sensor_data->cliffFrontLeftSignal > 2500 || sensor_data->cliffFrontLeftSignal < 500 ||
                  sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
             oi_setWheels(0,0);
+            move_backward(sensor_data, 150);
             return 4;
         }
-            //If we have a right sensor detection
+        //If we have a right sensor detection
         else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
                 sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
             oi_setWheels(0,0);
+            move_backward(robot, 150);
             return 5;
         }
     }

@@ -17,9 +17,14 @@
 #include "driverlib/interrupt.h"
 
 // These variables are declared as examples for your use in the interrupt handler.
-volatile char stop_byte = 115; // byte value for special character used as a command
-volatile char go_byte = 103;
-volatile int command_flag = -1; // flag to tell the main program a special command was received
+volatile int manualMode = 0;
+volatile char stop_byte = 111;  //letter 'o' makes robot stop
+volatile char go_byte = 112;    //letter 'p' makes robot go brr
+volatile int goCmd = 0;         //command that tells starts execution
+volatile int goForward = 119;   //letter 'w' goes forward
+volatile int goBackward = 115;  //letter 's' goes backward
+volatile int turnLeft = 97;     //letter 'a' turns left
+volatile int turnRight = 100;   //letter 'd' turns right
 
 void uart_interrupt_init(void){
 	//TODO
@@ -130,8 +135,9 @@ char uart_receive(void){
     return recData;
 }
 
+//TODO: UART SENDSTRING
 void uart_sendStr(const char *data){
-	//TODO for reference see lcd_puts from lcd.c file
+
 }
 
 // Interrupt handler for receive interrupts
@@ -163,13 +169,15 @@ void UART1_Handler(void)
             //code to update global shared variables
             //DO NOT PUT TIME-CONSUMING CODE IN AN ISR
 
+            //TODO: FINISH CODE FOR MOVING THE ROBOT GIVEN THE MOVEMENT KEYS, AS WELL AS A MANUAL MODE TOGGLE
             if (byte_received == go_byte)
             {
-              command_flag = 1;
+              goCmd = 1;
             }
             else if (byte_received == stop_byte) {
-                command_flag = 0;
+                goCmd = 0;
             }
+            else if (byte_received == )
         }
     }
 }
