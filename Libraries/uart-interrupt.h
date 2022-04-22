@@ -37,6 +37,8 @@ extern volatile int goForward;
 extern volatile int goBackward;
 extern volatile int turnLeft;
 extern volatile int turnRight;
+extern volatile int movementCode;
+extern volatile int manualKey;
 
 // UART1 device initialization for CyBot to PuTTY
 void uart_interrupt_init(void);

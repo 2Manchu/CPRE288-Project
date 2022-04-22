@@ -6,7 +6,6 @@
 
 #define LEFT_TURN_OFFSET 12
 #define RIGHT_TURN_OFFSET 14
-#define IR_THRESHOLD_VAL 850
 
 int move_forward(oi_t *sensor_data, int distance_mm) {
     oi_setWheels(150, 150);
@@ -37,7 +36,7 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
         else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
                 sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
             oi_setWheels(0,0);
-            move_backward(robot, 150);
+            move_backward(sensor_data, 150);
             return 5;
         }
     }

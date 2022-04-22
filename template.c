@@ -3,16 +3,20 @@
 //
 
 #include "stdio.h"
-#include "lcd.h"
-#include "Timer.h"
-#include "uart-interrupt.h"
-#include "adc.h"
-#include "button.h"
-#include "open_interface.h"
-#include "ping.h"
-#include "servo.h"
-#include "scan.h"
-#include "movement.h"
+#include "Libraries/lcd.h"
+#include "Libraries/Timer.h"
+#include "Libraries/uart-interrupt.h"
+#include "Libraries/adc.h"
+#include "Libraries/button.h"
+#include "Libraries/open_interface.h"
+#include "Libraries/ping.h"
+#include "Libraries/servo.h"
+#include "Libraries/scan.h"
+#include "Libraries/movement.h"
+
+#define IR_THRESHOLD_VAL 650
+#define ROBOT_WIDTH 35
+
 /*
  * Holds data points from sensor scan.
  * Data fields:
@@ -27,9 +31,9 @@ int dataPoints[181][2];
 int objects[15][4] = { '\0' };
 
 /**
- * Dimension 1 stores gap number. Dimension 2 contains gap width and angular position of the center of the gap
+ * Dimension 1 stores gap number. Dimension 2 contains gap width and angular position of the center of the gap, and the distance to the gap
  */
-int gaps[14][2] = {'\0'};
+int gaps[14][3] = {'\0'};
 
 /*
  * 0 if there is no skinny post in range of scan
@@ -190,7 +194,18 @@ int findObjects(scanInstance scan) {
     return objNum;
 }
 
+void clearGaps (void) {
+    int i;
+    int j;
+    for (i = 0; i < 14; i++) {
+        for (j = 0; j < 3; j++) {
+            gaps[i][j] = "\0";
+        }
+    }
+}
+
 int findGaps(int numObjs) {
+    clearGaps();
     int i;
     for(i = 0; i < numObjs - 1; ++i) {
         //Angular position to center of gap
@@ -204,13 +219,58 @@ int findGaps(int numObjs) {
         //We use the distance to the closer object to gauge the width of gap
         if (objects[i][1] > objects[i + 1][1]) {
             distToSmallestObj = objects[i + 1][1];
+            gaps[i][2] = distToSmallestObj;
         }
         else {
             distToSmallestObj = objects[i][1];
+            gaps[i][2] = distToSmallestObj;
         }
         gaps[i][0] = 2 * distToSmallestObj * sin(angularWidth / 2);
     }
-    return i;
+    return i + 1;
+}
+
+int findClosestGap(int numGaps) {
+    int i;
+    int smallestGapNum;
+    if (numGaps == 1) {
+        return 1;
+    }
+    else if (numGaps == 2 && gaps[0][2] < gaps[1][2]) {
+        return 0;
+    }
+    else if (numGaps == 2 && gaps[0][2] > gaps[1][2]) {
+        return 1;
+    }
+    else {
+        for (i = 0; i < numGaps - 1; i++) {
+            if (gaps[i][2] < gaps[i + 1][2]) {
+                smallestGapNum = i;
+            }
+            else {
+                smallestGapNum = i + 1;
+            }
+        }
+    }
+
+}
+
+int findSkinnyPost(int numObjects) {
+    int skinnyNum = -1;
+    for(int i = 0; i < numObjects; ++i) {
+
+        //Width and bounds are in mm
+        int currObjWidth = objects[i][2] / 10;
+        int lowBound = 55;
+        int highBound = currObjWidth + 61;
+
+        //Check if the current object's width is within the bounds of the correct width
+        if(currObjWidth > lowBound && currObjWidth < highBound) {
+            skinnyNum = i;
+            break;
+        }
+        return skinnyNum;
+    }
 }
 
 void main() {
@@ -252,7 +312,6 @@ void main() {
     #pragma ide diagnostic ignored "EndlessLoop"
         //TODO: NAVIGATE BETWEEN OBJECTS, AND GO FORWARD IF NONE FOUND. ADD APPROPRIATE ACTIONS IF WE HIT A LINE OR CLIFF
         //TODO: If we see a skinny pillar in the findObjects, then we set a special return code in the findObjects function, and have a goto that initiates the parking sequence
-        //TODO: FINISH THE LABELS MANUAL AND AUTONOMOUS TO ALLOW FOR OVERRIDE CONTROLS FROM THE BASE STATION
 
         //Repeatedly scan, find objects, and move forward accordingly. If bump sensors are triggered, stop, back
         //up, and turn, but don't move forward. Repeat sequence and essentially bounce around testing area until
@@ -261,13 +320,12 @@ void main() {
         while (goCmd) {
             if (manualMode) goto MANUAL_MODE;
             //Adjust position of object relative to robot, negative is to right, positive to left
-            eraseObjects();
             int numGaps = 0;
             scanSweep(scan);
             int numObjs = findObjects(scan);
             //TODO skinny post found sequence -- use goto
             if(skinnyPostFound == 1) {
-
+                int skinnyPostObjNum = findSkinnyPost(numObjs);
             }
 
             //Special cases if there's no gaps to go
@@ -285,6 +343,7 @@ void main() {
             else {
                 numGaps = findGaps(numObjs);
             }
+            findClosestGap(numGaps);
             //TODO: Move into gaps
             //After this we'll have to use the objects array and number of objects, plus a helper function to find the distance between the two objects
             //Then we find the angle to it using the above code snippet and get distance, then move to the gap
@@ -309,7 +368,21 @@ void main() {
     MANUAL_MODE:
     while (goCmd) {
         if (!manualMode) goto AUTONOMOUS_MODE;
-        if ()
+        if (movementCode == 1) {
+            move_forward(robot, 100);
+        }
+        else if (movementCode == 2) {
+            //do a jank backwards thing spin around, move forward, then spin back to avoid holes
+            turnLeftAngle(robot, 180);
+            move_forward(robot, 100);
+            turnRightAngle(robot, 180);
+        }
+        else if (movementCode == 3) {
+            turnLeftAngle(robot, 15);
+        }
+        else if (movementCode == 4) {
+            turnRightAngle(robot, -15);
+        }
     }
 
 

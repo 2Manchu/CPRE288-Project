@@ -18,6 +18,7 @@
 
 // These variables are declared as examples for your use in the interrupt handler.
 volatile int manualMode = 0;
+volatile int manualKey = 109;
 volatile char stop_byte = 111;  //letter 'o' makes robot stop
 volatile char go_byte = 112;    //letter 'p' makes robot go brr
 volatile int goCmd = 0;         //command that tells starts execution
@@ -25,9 +26,9 @@ volatile int goForward = 119;   //letter 'w' goes forward
 volatile int goBackward = 115;  //letter 's' goes backward
 volatile int turnLeft = 97;     //letter 'a' turns left
 volatile int turnRight = 100;   //letter 'd' turns right
+volatile int movementCode = -1;
 
 void uart_interrupt_init(void){
-	//TODO
   //enable clock to GPIO port B
   SYSCTL_RCGCGPIO_R |= 0b000010;
 
@@ -169,15 +170,29 @@ void UART1_Handler(void)
             //code to update global shared variables
             //DO NOT PUT TIME-CONSUMING CODE IN AN ISR
 
-            //TODO: FINISH CODE FOR MOVING THE ROBOT GIVEN THE MOVEMENT KEYS, AS WELL AS A MANUAL MODE TOGGLE
             if (byte_received == go_byte)
             {
               goCmd = 1;
             }
+            if (byte_received == manualKey) {
+                manualMode = !manualMode;
+            }
             else if (byte_received == stop_byte) {
                 goCmd = 0;
             }
-            else if (byte_received == )
+            else if (byte_received == goForward) {
+                movementCode = 1;
+            }
+            else if (byte_received == goBackward) {
+                movementCode = 2;
+            }
+            else if (byte_received == turnLeft) {
+                movementCode = 3;
+            }
+            else if (byte_received == turnRight) {
+                movementCode = 4;
+            }
+
         }
     }
 }

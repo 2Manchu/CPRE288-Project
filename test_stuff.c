@@ -2,120 +2,258 @@
 // Created by Tony Manschula on 4/13/22.
 //
 
-#include "Libraries/Timer.h"
+#include "stdio.h"
 #include "Libraries/lcd.h"
+#include "Libraries/Timer.h"
+#include "Libraries/uart-interrupt.h"
 #include "Libraries/adc.h"
 #include "Libraries/button.h"
+#include "Libraries/open_interface.h"
 #include "Libraries/ping.h"
 #include "Libraries/servo.h"
-#include "Libraries/uart-interrupt.h"
-#include "Libraries/open_interface.h"
+#include "Libraries/scan.h"
+#include "Libraries/movement.h"
 
-#define LEFT_TURN_OFFSET 12
-#define RIGHT_TURN_OFFSET 14
-#define IR_THRESHOLD_VAL 850
+#define IR_THRESHOLD_VAL 600
 
-int move_forward(oi_t *sensor_data, int distance_mm) {
-    oi_setWheels(150, 150);
-    int sum = 0;
+/*
+ * Holds data points from sensor scan.
+ * Data fields:
+ *      If dataPoints[x][] is data for angle x, dataPoints[x][0] contains PING distance, and
+ *      dataPoints[x][1] contains raw IR sensor readings, and
+ *      dataPoints[x][2] contains converted IR distance in cm.
+ */
+int dataPoints[181][3];
 
-    while (sum < distance_mm) {
-        oi_update(sensor_data);
+/*
+ * Dimension 1 stores object number. Dimension 2 contains angular position of object, distance to object, linear width, and radial width respectively.
+ */
+int objects[15][4] = { '\0' };
 
-        lcd_printf("Left Signal: %d\n Right Signal: %d", sensor_data->cliffLeftSignal, sensor_data->cliffRightSignal);
+/**
+ * Dimension 1 stores gap number. Dimension 2 contains gap width and angular position of the center of the gap
+ */
+int gaps[14][2] = {'\0'};
 
-        sum += sensor_data->distance;
+/*
+ * 0 if there is no skinny post in range of scan
+ * 1 if skinny post has been found
+ */
+int skinnyPostFound = 0;
 
-        if (sensor_data->bumpLeft) {
-            oi_setWheels(0,0);
-            return 1;
-        }
-        else if (sensor_data->bumpRight) {
-            oi_setWheels(0,0);
-            return 2;
-        }
-        else if (sensor_data->bumpRight && sensor_data->bumpLeft) {
-            oi_setWheels(0,0);
-            return 3;
-        }
-            //If we've hit the white tape or cliff with left sensors
-        else if (sensor_data->cliffFrontLeftSignal > 2500 || sensor_data->cliffFrontLeftSignal < 500 ||
-                 sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
-            oi_setWheels(0,0);
-            return 4;
-        }
-            //If we've hit the white tape or cliff with right sensors
-        else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
-                sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
-            oi_setWheels(0,0);
-            return 5;
+void eraseObjects() {
+    //Currently hardcoded for size of objects array, adjust for size of array
+    int i, j;
+    for(i = 0; i < 15; ++i) {
+        for(j = 0; j < 4; ++j) {
+            objects[i][j] = '\0';
         }
     }
-    return 0;
 }
-void move_backward(oi_t *sensor_data, int distance_mm) {
-    oi_setWheels(-175,-175);
-    int sum = distance_mm;
 
-    while (sum > 0) {
-        oi_update(sensor_data);
-        lcd_printf("Left Signal: %d\n Right Signal: %d", sensor_data->cliffLeftSignal, sensor_data->cliffRightSignal);
-        sum += sensor_data->distance;
+void updateDisplay(char display[], char keyPress) {
+    sprintf(display, "Key Pressed: %c", keyPress);
+    lcd_printf(display);
+}
+
+void scanSweep(scanInstance scan) {
+    //Scan Angle Range
+    doScan(0, &scan);
+    timer_waitMillis(1500);
+    int currAngle;
+    //Make a 180 degree sweep of the field
+    for (currAngle = 0; currAngle <= 180; currAngle++) {
+        int i;
+        doScan(currAngle, &scan);
+
+        //Send the angle we just scanned to putty
+        char angle[4] = { '\0' };
+        sprintf(angle, "%d", currAngle);
+        for (i = 0; i < 4; i++) {
+            uart_sendChar(angle[i]);
+        }
+        uart_sendChar('\t');
+        uart_sendChar('\t');
+
+        //Send the initial ping distance to putty
+        char ping[5] = { '\0' };
+        float pingDist = scan.pingDist;
+        //Read PING distance into data points
+        dataPoints[currAngle][0] = pingDist;
+        sprintf(ping, "%f", pingDist);
+        for (i = 0; i < 6; i++) {
+            uart_sendChar(ping[i]);
+        }
+        uart_sendChar('\t');
+        uart_sendChar('\t');
+        uart_sendChar('\t');
+
+        //Send the IR distance to putty
+        char ir[5] = { '\0' };
+        int irRaw = scan.irRaw;
+        dataPoints[currAngle][1] = irRaw;
+        sprintf(ir, "%d", irRaw);
+        for (i = 0; i < 5; i++) {
+            uart_sendChar(ir[i]);
+        }
+        uart_sendChar('\t');
+        uart_sendChar('\t');
+        uart_sendChar('\t');
+
+        dataPoints[currAngle][2] = (int)scan.irDist;
+        char irD[5] = {'\0'};
+        sprintf(irD, "%lf", scan.irDist);
+        for (i = 0; i < 5; i++) {
+            uart_sendChar(irD[i]);
+        }
+
+        uart_sendChar('\r');
+        uart_sendChar('\n');
     }
-
-    oi_setWheels(0, 0);
 }
 
-int turnLeftAngle(oi_t *sensor_data, int angleToTurnTo) {
+int findObjects(scanInstance scan) {
+    eraseObjects();
+    int objectStartDeg, objectEndDeg, angularWidth;
+    double arcLength;
+    int i, j;
     double sum = 0;
-    oi_setWheels(100, -100);
+    int objNum = 0;
 
-    //If we have an object that's closer than whatever our left turn angular offset is, just turn left to half of the offset degrees
-    if (angleToTurnTo - LEFT_TURN_OFFSET <= 0) {
-        while (sum < LEFT_TURN_OFFSET / 2) {
-            oi_update(sensor_data);
-            sum += sensor_data->angle;
+    //Go through the data points to find objects
+    //Set to 171 because the sensor on cybot 1 sucks ass
+    for (i = 0; i < 181; i++) {
+        int isObjFound = 0;
+        //If the object is closer than our specified distance threshold, set that angle as the start of the object
+        if (dataPoints[i][1] > IR_THRESHOLD_VAL) {
+            objectStartDeg = i;
+            isObjFound = 1;
         }
-        oi_setWheels(0, 0);
-        return -1;
+
+        //Go advance through data points until we find a value that is less than our distance threshold. This marks the end of an object
+        while (dataPoints[i][1] > IR_THRESHOLD_VAL) {
+            objectEndDeg = i + 2;
+            i += 2;
+            //TODO: LOOK AT END OF OBJECT DETECTION CAUSE WE'RE GETTING REALLY HIGH IR CALCULATED DISTANCE READINGS AT THE SUPPOSED END OF OBJECTS
+        }
+        if (isObjFound) {
+            //Find angular position of the middle of the detected object
+            objects[objNum][0] = (objectStartDeg + objectEndDeg - 2) / 2;
+            //Put the IR distance into the objects distance element
+            objects[objNum][1] =  dataPoints[(objectStartDeg + objectEndDeg - 2) / 2][2];
+            angularWidth = objectEndDeg - objectStartDeg;
+            objects[objNum][3] = angularWidth;
+            //Find linear width using arc length as a pretty reasonable approximation. We could find chord length using arc len for an exact reading if arc len is not good enough
+
+            int radius = (dataPoints[objectStartDeg][2] + dataPoints[objectEndDeg][2]) / 2;
+            arcLength = 2.0 * M_PI * (double)radius * ((double)angularWidth / 360.0);
+            objects[objNum][2] = (int)arcLength;
+            //TODO Change 10 to the width of the skinny posts
+            //TODO: DO SOME TESTING TO FIND THE SIZE OF SKINNY BOIS
+            if(objects[objNum][2] < 9) {
+                skinnyPostFound = 1;
+            }
+            objNum++;
+            i += 2;
+        }
     }
 
-    while (sum < angleToTurnTo - LEFT_TURN_OFFSET) {
-        oi_update(sensor_data);
-        sum += sensor_data->angle;
+    /*
+    //IMPROVING THE OBJECT DETECTION
+    for (i = 0; i < objNum; i++) {
+        doScan(objects[i][0], &scan);
+        objects[i][1] = scan.irDist;
+
+        //If we get a bad distance do the scan again
+        if (scan.irDist > 100) {
+            i--;
+        }
+
     }
-    oi_setWheels(0, 0);
-    return 0;
+     */
+
+    //Send out info to putty regarding the detected objects
+    char angle[4] = { '\0' };
+    char irDist[5] = { '\0' };
+    char linWidth[3] = { '\0' };
+    char header[39] = "AnglePos\tPING Distance\t\tLinear Width\r\n";
+
+    for (i = 0; i <= 38; i++) {
+        uart_sendChar(header[i]);
+    }
+
+    for (j = 0; j < objNum; j++) {
+        if (objects[j][3] > 4) {
+            sprintf(angle, "%d", objects[j][0]);
+            sprintf(irDist, "%d", objects[j][1]);
+            sprintf(linWidth, "%d", objects[j][2]);
+
+            for (i = 0; i < 4; i++) {
+                uart_sendChar(angle[i]);
+            }
+            uart_sendChar('\t');
+            uart_sendChar('\t');
+
+            for (i = 0; i < 5; i++) {
+                uart_sendChar(irDist[i]);
+            }
+            uart_sendChar('\t');
+            uart_sendChar('\t');
+            uart_sendChar('\t');
+
+            for (i = 0; i < 3; i++) {
+                uart_sendChar(linWidth[i]);
+            }
+            uart_sendChar('\r');
+            uart_sendChar('\n');
+        }
+    }
+    return objNum;
 }
 
-int turnRightAngle(oi_t *sensor_data, int angleToTurnTo) {
+int findGaps(int numObjs) {
+    int i;
+    for (i = 0; i < numObjs - 1; ++i) {
+        //Angular position to center of gap
+        gaps[i][1] = (objects[i][0] + objects[i + 1][0]) / 2;
 
-    double sum = 0;
-    int corrAngle = angleToTurnTo + RIGHT_TURN_OFFSET;
+        //Angular width of gap
+        int angularWidth = objects[i + 1][0] - objects[i][0];
 
-    //If our angle to turn right is less than the offset, then just turn right amount of offset divided by 2
-    if (corrAngle >= 0) {
-        oi_setWheels(-100, 100);
-        while(sum > RIGHT_TURN_OFFSET / 2) {
-            oi_update(sensor_data);
-            sum += sensor_data->angle;
+        //Linear width of gap
+        int distToSmallestObj;
+        //We use the distance to the closer object to gauge the width of gap
+        if (objects[i][1] > objects[i + 1][1]) {
+            distToSmallestObj = objects[i + 1][1];
+        } else {
+            distToSmallestObj = objects[i][1];
         }
-        oi_setWheels(0, 0);
-        return -1;
+        gaps[i][0] = 2 * distToSmallestObj * sin(angularWidth / 2);
     }
+    return i;
+}
 
-    oi_setWheels(-100, 100);
-    while(sum > corrAngle) {
-        oi_update(sensor_data);
-        sum += sensor_data->angle;
+
+int findSkinnyPost(int numObjects) {
+    int skinnyNum = -1;
+    int i = 0;
+    for(i = 0; i < numObjects; ++i) {
+
+        //Width and bounds are in mm
+        int currObjWidth = objects[i][2] / 10;
+        int lowBound = 55;
+        int highBound = currObjWidth + 61;
+
+        //Check if the current object's width is within the bounds of the correct width
+        if(currObjWidth > lowBound && currObjWidth < highBound) {
+            skinnyNum = i;
+            break;
+        }
+        return skinnyNum;
     }
-    oi_setWheels(0,0);
-    return 0;
 }
 
 void main() {
-
-
     int i;
     timer_init();
     lcd_init();
@@ -129,29 +267,37 @@ void main() {
     oi_init(robot);
     oi_update(robot);
 
-    int moveValue = move_forward(robot, 1000);
-    lcd_printf("%d", moveValue);
-    if(moveValue == 1) {
+    //servo_calibrate();
+    set_left(36900);
+    set_right(9300);
 
-    }
-    else if(moveValue == 2) {
+    scanInstance scan;
 
-    }
-    else if(moveValue == 3) {
+//    for (i = 0; i <= 180; i = i + 2) {
+//        doScan(i, &scan);
+//        lcd_printf("Angle: %d\nIR Raw: %d\nIR Dist: %.3lf\nPING Dist: %f", scan.angle, scan.irRaw, scan.irDist, scan.pingDist);
+//    }
 
+    scanSweep(scan);
+    int numObjects = findObjects(scan);
+    int numGaps = findGaps(numObjects);
+    if(skinnyPostFound == 1) {
+        int skinnyNum = findSkinnyPost(numObjects);
+        int skinnyAngle = objects[skinnyNum][0];
+        int skinnyDistance = objects[skinnyNum][1];
+        int skinnyWidth = objects[skinnyNum][2];
+        if(skinnyAngle < 90) {
+            turnRightAngle(robot, skinnyAngle - 90);
+        }
+        else if(skinnyAngle > 90) {
+            turnLeftAngle(robot, skinnyAngle - 90);
+        }
+        move_forward(robot, skinnyDistance - 50);
+        lcd_printf("Skinny Number: %d\nSkinny Width: %d\nnumObjects: %d\nnumGaps: %d", skinnyNum, skinnyWidth, numObjects, numGaps);
     }
-    else if(moveValue == 4) {
-        move_backward(robot, 200);
-        turnRightAngle(robot, -90);
-        move_forward(robot, 500);
-
+    else {
+        lcd_printf("numObjects: %d\nnumGaps: %d", numObjects, numGaps);
     }
-    else if(moveValue == 5) {
-        move_backward(robot, 200);
-        turnLeftAngle(robot, 90);
-        move_forward(robot, 500);
-    }
-
 
     oi_free(robot);
 

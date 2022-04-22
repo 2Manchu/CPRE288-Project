@@ -6,8 +6,7 @@
 
 void doScan(int angle, scanInstance* scan) {
     servo_move(angle);
-    timer_waitMillis(150);
     scan->irRaw = adc_read();
     scan->irDist = adc_getDistance(scan->irRaw);
-    scan->pingDist = ping_getDistance();
+    scan->pingDist = ping_getDistance() * 100;
 }
