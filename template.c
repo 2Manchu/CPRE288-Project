@@ -30,6 +30,11 @@ int dataPoints[181][2];
  */
 int objects[15][4] = { '\0' };
 
+/**
+ * Dimension 1 stores gap number. Dimension 2 contains gap width and angular position of the center of the gap
+ */
+int gaps[14][2] = {'\0'};
+
 /*
  * 0 if there is no skinny post in range of scan
  * 1 if skinny post has been found
@@ -282,6 +287,18 @@ int findObjects(scanInstance scan) {
     return objNum;
 }
 
+//TODO FIND GAPS FUNCTION
+int findGaps(int numObjs) {
+    for(int i = 0; i < numObjs - 1; ++i) {
+        //Angular position to center of gap
+        gaps[i][1] = (objects[i][0] + objects[i + 1][0]) / 2;
+        //Angular width of gap
+        int angularWidth = objects[i + 1][0] - objects[i][0];
+        //Linear width of gap
+        gaps[i][0] =
+    }
+}
+
 void main() {
     timer_init();
     lcd_init();
@@ -320,21 +337,13 @@ void main() {
         //TODO: NAVIGATE BETWEEN OBJECTS, AND GO FORWARD IF NONE FOUND. ADD APPROPRIATE ACTIONS IF WE HIT A LINE OR CLIFF
         //TODO: If we see a skinny pillar in the findObjects, then we set a special return code in the findObjects function, and have a goto that initiates the parking sequence
         //Adjust position of object relative to robot, negative is to right, positive to left
-        int objPos = objects[smallestObj][0] - 90;
-        //if object is to the left
-        if (objPos > 0)  {
-            turnLeftAngle(robot, objPos);
-        }
-        //if object is to the right
-        else if (objPos < 0 ) {
-            turnRightAngle(robot, objPos);
-        }
 
         //Repeatedly scan, find objects, and move forward accordingly. If bump sensors are triggered, stop, back
         //up, and turn, but don't move forward. Repeat sequence and essentially bounce around testing area until
         //cliff sensors pick up blue tape that mark the end zone, which will then trigger the parking sequence
         while (1) {
             eraseObjects();
+            int numGaps = 0;
             scanSweep(scan);
             int numObjs = findObjects(scan);
             //TODO skinny post found sequence
@@ -353,6 +362,9 @@ void main() {
                 else {
                     turnLeftAngle(robot, 30);
                 }
+            }
+            else {
+                numGaps = findGaps(numObjs);
             }
             //After this we'll have to use the objects array and number of objects, plus a helper function to find the distance between the two objects
             //Then we find the angle to it using the above code snippet and get distance, then move to the gap
