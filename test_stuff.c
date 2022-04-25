@@ -39,7 +39,7 @@ int gaps[14][2] = {'\0'};
  * 0 if there is no skinny post in range of scan
  * 1 if skinny post has been found
  */
-int skinnyPostFound = 0;
+int skinnyPostFound = -1;
 
 void eraseObjects() {
     //Currently hardcoded for size of objects array, adjust for size of array
@@ -62,7 +62,7 @@ void scanSweep(scanInstance scan) {
     timer_waitMillis(1500);
     int currAngle;
     //Make a 180 degree sweep of the field
-    for (currAngle = 0; currAngle <= 180; currAngle++) {
+    for (currAngle = 0; currAngle <= 180; currAngle += 2) {
         int i;
         doScan(currAngle, &scan);
 
@@ -88,7 +88,7 @@ void scanSweep(scanInstance scan) {
         uart_sendChar('\t');
         uart_sendChar('\t');
 
-        //Send the IR distance to putty
+        //Send the IR raw reading to putty
         char ir[5] = { '\0' };
         int irRaw = scan.irRaw;
         dataPoints[currAngle][1] = irRaw;
@@ -121,8 +121,7 @@ int findObjects(scanInstance scan) {
     int objNum = 0;
 
     //Go through the data points to find objects
-    //Set to 171 because the sensor on cybot 1 sucks ass
-    for (i = 0; i < 181; i++) {
+    for (i = 0; i < 181; i += 2) {
         int isObjFound = 0;
         //If the object is closer than our specified distance threshold, set that angle as the start of the object
         if (dataPoints[i][1] > IR_THRESHOLD_VAL) {
@@ -134,49 +133,39 @@ int findObjects(scanInstance scan) {
         while (dataPoints[i][1] > IR_THRESHOLD_VAL) {
             objectEndDeg = i + 2;
             i += 2;
-            //TODO: LOOK AT END OF OBJECT DETECTION CAUSE WE'RE GETTING REALLY HIGH IR CALCULATED DISTANCE READINGS AT THE SUPPOSED END OF OBJECTS
         }
         if (isObjFound) {
             //Find angular position of the middle of the detected object
-            objects[objNum][0] = (objectStartDeg + objectEndDeg - 2) / 2;
-            //Put the IR distance into the objects distance element
-            objects[objNum][1] =  dataPoints[(objectStartDeg + objectEndDeg - 2) / 2][2];
+            int objAngPos = (objectStartDeg + objectEndDeg) / 2;
+            if (objAngPos % 2 == 1) {
+                objAngPos++;
+            }
+            objects[objNum][0] = objAngPos;
+            //Putting the PING distance now (?!?!?!) from the middle angle of the object from datapoints array into the distance to object field in objects array
+            objects[objNum][1] = dataPoints[objects[objNum][0]][0];
+            //Assign the object an angular width
             angularWidth = objectEndDeg - objectStartDeg;
             objects[objNum][3] = angularWidth;
-            //Find linear width using arc length as a pretty reasonable approximation. We could find chord length using arc len for an exact reading if arc len is not good enough
 
-            int radius = (dataPoints[objectStartDeg][2] + dataPoints[objectEndDeg][2]) / 2;
+            //Find linear width using arc length as a pretty reasonable approximation. We could find chord length using arc len for an exact reading if arc len is not good enough
+            int radius = objects[objNum][1];
             arcLength = 2.0 * M_PI * (double)radius * ((double)angularWidth / 360.0);
             objects[objNum][2] = (int)arcLength;
             //TODO Change 10 to the width of the skinny posts
             //TODO: DO SOME TESTING TO FIND THE SIZE OF SKINNY BOIS
-            if(objects[objNum][2] < 9) {
-                skinnyPostFound = 1;
+            if(objects[objNum][2] <= 9) {
+                skinnyPostFound = objNum;
             }
             objNum++;
             i += 2;
         }
     }
 
-    /*
-    //IMPROVING THE OBJECT DETECTION
-    for (i = 0; i < objNum; i++) {
-        doScan(objects[i][0], &scan);
-        objects[i][1] = scan.irDist;
-
-        //If we get a bad distance do the scan again
-        if (scan.irDist > 100) {
-            i--;
-        }
-
-    }
-     */
-
     //Send out info to putty regarding the detected objects
     char angle[4] = { '\0' };
     char irDist[5] = { '\0' };
     char linWidth[3] = { '\0' };
-    char header[39] = "AnglePos\tPING Distance\t\tLinear Width\r\n";
+    char header[39] = "AnglePos\tIR Distance\t\tLinear Width\r\n";
 
     for (i = 0; i <= 38; i++) {
         uart_sendChar(header[i]);
@@ -240,9 +229,9 @@ int findSkinnyPost(int numObjects) {
     for(i = 0; i < numObjects; ++i) {
 
         //Width and bounds are in mm
-        int currObjWidth = objects[i][2] / 10;
-        int lowBound = 55;
-        int highBound = currObjWidth + 61;
+        int currObjWidth = objects[i][2];
+        int lowBound = 1;
+        int highBound = currObjWidth + 6;
 
         //Check if the current object's width is within the bounds of the correct width
         if(currObjWidth > lowBound && currObjWidth < highBound) {
@@ -268,8 +257,8 @@ void main() {
     oi_update(robot);
 
     //servo_calibrate();
-    set_left(36900);
-    set_right(9300);
+    set_left(37200);
+    set_right(9400);
 
     scanInstance scan;
 
@@ -281,8 +270,8 @@ void main() {
     scanSweep(scan);
     int numObjects = findObjects(scan);
     int numGaps = findGaps(numObjects);
-    if(skinnyPostFound == 1) {
-        int skinnyNum = findSkinnyPost(numObjects);
+    if(skinnyPostFound != -1) {
+        int skinnyNum = skinnyPostFound;
         int skinnyAngle = objects[skinnyNum][0];
         int skinnyDistance = objects[skinnyNum][1];
         int skinnyWidth = objects[skinnyNum][2];
