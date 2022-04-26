@@ -15,13 +15,14 @@
 #include <stdint.h>
 #include "uart-interrupt.h"
 #include "driverlib/interrupt.h"
+#include "string.h"
 
 // These variables are declared as examples for your use in the interrupt handler.
-volatile int manualMode = 0;
-volatile int manualKey = 109;
 volatile char stop_byte = 111;  //letter 'o' makes robot stop
 volatile char go_byte = 112;    //letter 'p' makes robot go brr
 volatile int goCmd = 0;         //command that tells starts execution
+volatile int manualMode = 0;
+volatile int manualKey = 109;   //letter 'm' toggles manual/autonomous mode
 volatile int goForward = 119;   //letter 'w' goes forward
 volatile int goBackward = 115;  //letter 's' goes backward
 volatile int turnLeft = 97;     //letter 'a' turns left
@@ -138,7 +139,10 @@ char uart_receive(void){
 
 //TODO: UART SENDSTRING
 void uart_sendStr(const char *data){
-
+    int i;
+    for (i = 0; i < strlen(data); i++) {
+        uart_sendChar(data[i]);
+    }
 }
 
 // Interrupt handler for receive interrupts
@@ -156,6 +160,8 @@ void UART1_Handler(void)
         //ignore the error bits in UART1_DR_R
         byte_received = uart_receive();
         uart_sendChar(byte_received);
+        uart_sendStr("\r\n");
+
 
         //if byte received is a carriage return
         if (byte_received == '\r')

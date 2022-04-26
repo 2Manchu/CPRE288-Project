@@ -40,6 +40,7 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
             return 5;
         }
     }
+    oi_setWheels(0,0);
     return 0;
 }
 

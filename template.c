@@ -39,12 +39,13 @@ int gaps[14][3] = {'\0'};
  * 0 if there is no skinny post in range of scan
  * 1 if skinny post has been found
  */
-int skinnyPostFound = 0;
+int skinnyPostFound = -1;
 
 void eraseObjects() {
+    int i, j;
     //Currently hardcoded for size of objects array, adjust for size of array
-    for(int i = 0; i < 15; ++i) {
-        for(int j = 0; j < 4; ++j) {
+    for(i = 0; i < 15; ++i) {
+        for(j = 0; j < 4; ++j) {
             objects[i][j] = '\0';
         }
     }
@@ -61,6 +62,9 @@ void scanSweep(scanInstance scan) {
     timer_waitMillis(1500);
     int currAngle;
     //Make a 180 degree sweep of the field
+
+    uart_sendStr("!Degrees\t\tPING Distance (cm)\tIR Value\r\n");
+
     for (currAngle = 0; currAngle <= 180; currAngle += 2) {
         int i;
         doScan(currAngle, &scan);
@@ -109,7 +113,6 @@ int findObjects(scanInstance scan) {
     int objNum = 0;
 
     //Go through the data points to find objects
-    //Set to 171 because the sensor on cybot 1 sucks ass
     for (i = 0; i < 181; i += 2) {
         int isObjFound = 0;
         //If the object is closer than our specified distance threshold, set that angle as the start of the object
@@ -125,41 +128,35 @@ int findObjects(scanInstance scan) {
         }
         if (isObjFound) {
             //Find angular position of the middle of the detected object
-            objects[objNum][0] = (objectStartDeg + objectEndDeg - 2) / 2;
+            int objAngPos = (objectStartDeg + objectEndDeg) / 2;
+            if (objAngPos % 2 == 1) {
+                objAngPos++;
+            }
+            objects[objNum][0] = objAngPos;
+            //Putting the PING distance now (?!?!?!) from the middle angle of the object from datapoints array into the distance to object field in objects array
+            objects[objNum][1] = dataPoints[objects[objNum][0]][0];
+            //Assign the object an angular width
             angularWidth = objectEndDeg - objectStartDeg;
             objects[objNum][3] = angularWidth;
-            //Find linear width using arc length as a pretty reasonable approximation. We could find chord length using arc len for an exact reading if arc len is not good enough
 
-            int radius = (dataPoints[objectStartDeg][0] + dataPoints[objectEndDeg][0]) / 2;
+            //Find linear width using arc length as a pretty reasonable approximation. We could find chord length using arc len for an exact reading if arc len is not good enough
+            int radius = objects[objNum][1];
             arcLength = 2.0 * M_PI * (double)radius * ((double)angularWidth / 360.0);
             objects[objNum][2] = (int)arcLength;
-            //TODO Change 10 to the width of the skinny posts
-            //TODO: DO SOME TESTING TO FIND THE SIZE OF SKINNY BOIS
-            if(objects[objNum][2] < 10) {
-                skinnyPostFound = 1;
+            //TODO Change number below to appropriate width of skinny
+            if(objects[objNum][2] <= 9) {
+                skinnyPostFound = objNum;
             }
             objNum++;
             i += 2;
         }
     }
 
-    //IMPROVING THE OBJECT DETECTION
-    for (i = 0; i < objNum; i++) {
-        doScan(objects[i][0], &scan);
-        objects[i][1] = scan.irDist;
-
-        //If we get a bad distance do the scan again
-        if (scan.irDist > 100) {
-            i--;
-        }
-
-    }
-
     //Send out info to putty regarding the detected objects
     char angle[4] = { '\0' };
     char irDist[5] = { '\0' };
     char linWidth[3] = { '\0' };
-    char header[39] = "AnglePos\tPING Distance\t\tLinear Width\r\n";
+    char header[39] = "AnglePos\tIR Distance\t\tLinear Width\r\n";
 
     for (i = 0; i <= 38; i++) {
         uart_sendChar(header[i]);
@@ -207,14 +204,17 @@ void clearGaps (void) {
 int findGaps(int numObjs) {
     clearGaps();
     int i;
-    for(i = 0; i < numObjs - 1; ++i) {
+    uart_sendStr("Gap angle\tDist to gap\tGap lin width\r\n");
+    for(i = 0; i < numObjs - 1; i++) {
         //Angular position to center of gap
         gaps[i][1] = (objects[i][0] + objects[i + 1][0]) / 2;
+        uart_sendStr((const char *) gaps[i][1]);
+        uart_sendStr("\t\t");
 
         //Angular width of gap
         int angularWidth = objects[i + 1][0] - objects[i][0];
 
-        //Linear width of gap
+        //Distance to gap
         int distToSmallestObj;
         //We use the distance to the closer object to gauge the width of gap
         if (objects[i][1] > objects[i + 1][1]) {
@@ -225,16 +225,21 @@ int findGaps(int numObjs) {
             distToSmallestObj = objects[i][1];
             gaps[i][2] = distToSmallestObj;
         }
+        uart_sendStr((const char *) distToSmallestObj);
+        uart_sendStr("\t\t");
+        //Linear width of gap
         gaps[i][0] = 2 * distToSmallestObj * sin(angularWidth / 2);
+        uart_sendStr("\r\n");
     }
-    return i + 1;
+
+    return i;
 }
 
 int findClosestGap(int numGaps) {
     int i;
     int smallestGapNum;
     if (numGaps == 1) {
-        return 1;
+        return 0;
     }
     else if (numGaps == 2 && gaps[0][2] < gaps[1][2]) {
         return 0;
@@ -255,6 +260,7 @@ int findClosestGap(int numGaps) {
 
 }
 
+/*
 int findSkinnyPost(int numObjects) {
     int skinnyNum = -1;
     for(int i = 0; i < numObjects; ++i) {
@@ -272,6 +278,7 @@ int findSkinnyPost(int numObjects) {
         return skinnyNum;
     }
 }
+ */
 
 void main() {
     timer_init();
@@ -283,9 +290,10 @@ void main() {
     uart_interrupt_init();
 
     //Servo calibration actions, uncomment when doing new robot
+    //Current for CYBOT 12
     //servo_calibrate();
-    set_left(35600);
-    set_right(7500);
+    set_left(37200);
+    set_right(9400);
 
     //Create an open interface object
     oi_t *robot = oi_alloc();
@@ -298,15 +306,11 @@ void main() {
     int isAvoiding = 0;
     int moveStatus = -1;
 
+    while (!goCmd) {};  //busywait on the command to go from the uart controller
+    uart_sendStr("!STARTING SEQUENCE\r\n");
+
     //Print the table header for the initial sweep of the field
     //TODO: IF WE ARE DOING OUTPUT AS CSV WE'LL HAVE TO CHANGE THIS
-    char header[39] = "Degrees\t\tPING Distance (cm)\tIR Value\r\n";
-    int i;
-    for (i = 0; i <= 38; i++) {
-        uart_sendChar(header[i]);
-    }
-
-    while (!goCmd) {};  //busywait on the command to go from the uart controller
 
     #pragma clang diagnostic push
     #pragma ide diagnostic ignored "EndlessLoop"
@@ -316,85 +320,111 @@ void main() {
         //Repeatedly scan, find objects, and move forward accordingly. If bump sensors are triggered, stop, back
         //up, and turn, but don't move forward. Repeat sequence and essentially bounce around testing area until
         //cliff sensors pick up blue tape that mark the end zone, which will then trigger the parking sequence
-    AUTONOMOUS_MODE:
-        while (goCmd) {
-            if (manualMode) goto MANUAL_MODE;
+    while (1) {
+        while (goCmd && !manualMode && skinnyPostFound == -1) {
+            if (manualMode) {
+                uart_sendStr("!MANUAL MODE ENTERED\r\n");
+                goto BOTTOM;
+            }
             //Adjust position of object relative to robot, negative is to right, positive to left
             int numGaps = 0;
+            int closestGap = -1;
+            int distToGap = -1;
+            int gapAngPos = -1;
+
             scanSweep(scan);
             int numObjs = findObjects(scan);
-            //TODO skinny post found sequence -- use goto
-            if(skinnyPostFound == 1) {
-                int skinnyPostObjNum = findSkinnyPost(numObjs);
+            //TODO skinny post found sequence
+            if (skinnyPostFound != -1) {
+                uart_sendStr("!PARKING SEQUENCE INITIATED\r\n");
+                goto BOTTOM;
             }
 
             //Special cases if there's no gaps to go
+            //Typed out for clarity
             if (numObjs == 0) {
-                continue;
+                moveStatus = move_forward(robot, 350);
             }
+            //If there's only one object just go towards it
             else if (numObjs == 1) {
                 if (objects[0][0] <= 90) {
                     turnRightAngle(robot, -30);
-                }
-                else {
+                } else {
                     turnLeftAngle(robot, 30);
                 }
+                moveStatus = move_forward(robot, 350);
             }
-            else {
+            //We have several objects so go towards the closest gap
+            else if (numObjs > 1) {
                 numGaps = findGaps(numObjs);
+                closestGap = findClosestGap(numGaps);
+
+                gapAngPos = gaps[closestGap][1];
+                gapAngPos = gapAngPos - 90;
+                if (gapAngPos > 90) {
+                    turnLeftAngle(robot, gapAngPos);
+                }
+                else if (gapAngPos < 90 ) {
+                    turnRightAngle(robot, gapAngPos);
+                }
+
+                distToGap = gaps[closestGap][2];
+                moveStatus = move_forward(robot, (distToGap + 10) * 10);
             }
-            findClosestGap(numGaps);
-            //TODO: Move into gaps
-            //After this we'll have to use the objects array and number of objects, plus a helper function to find the distance between the two objects
-            //Then we find the angle to it using the above code snippet and get distance, then move to the gap
-            //We should also ensure before moving that we fit through the gap by checking gaps[1] against our width
-            moveStatus = move_forward(robot, 500);
+            //TODO: Move into gaps ^^^
+
             if (moveStatus == 1) {
                 turnRightAngle(robot, -90);
             }
             else if (moveStatus == 2) {
                 turnLeftAngle(robot, 90);
             }
-            //We have a left side cliff detection
+                //We have a left side cliff detection
             else if (moveStatus == 4) {
                 turnRightAngle(robot, -90);
             }
-            //We have a right side cliff detection
+                //We have a right side cliff detection
             else if (moveStatus == 5) {
                 turnLeftAngle(robot, 90);
             }
         }
 
-    MANUAL_MODE:
-    while (goCmd) {
-        if (!manualMode) goto AUTONOMOUS_MODE;
-        if (movementCode == 1) {
-            move_forward(robot, 100);
+        while (goCmd && manualMode && skinnyPostFound == -1) {
+            if (!manualMode) {
+                uart_sendStr("!ENTERING AUTONOMOUS MODE\r\n");
+                break;
+            }
+            if (movementCode == 1) {
+                move_forward(robot, 100);
+                movementCode = 0;
+            } else if (movementCode == 2) {
+                //do a jank backwards thing spin around, move forward, then spin back to avoid holes
+                turnLeftAngle(robot, 180);
+                move_forward(robot, 100);
+                turnRightAngle(robot, 180);
+                movementCode = 0;
+            } else if (movementCode == 3) {
+                turnLeftAngle(robot, 15);
+                movementCode = 0;
+            } else if (movementCode == 4) {
+                turnRightAngle(robot, -15);
+                movementCode = 0;
+            }
+
         }
-        else if (movementCode == 2) {
-            //do a jank backwards thing spin around, move forward, then spin back to avoid holes
-            turnLeftAngle(robot, 180);
-            move_forward(robot, 100);
-            turnRightAngle(robot, 180);
-        }
-        else if (movementCode == 3) {
-            turnLeftAngle(robot, 15);
-        }
-        else if (movementCode == 4) {
-            turnRightAngle(robot, -15);
-        }
-    }
 
 
 
-    //Just added an if statement here to prevent it from executing this code when goCmd is no longer true.
-    //This will occur when the user issues presses 'o' while the program is still in normal execution and the destination has not been found
-    if (goCmd) {
-        PARK:
-        //Stop robot, show exit indication, quit OI
-        oi_setWheels(0, 0);
-        updateDisplay(display, '!');
-        oi_free(robot);
+        //Just added an if statement here to prevent it from executing this code when goCmd is no longer true.
+        //This will occur when the user issues presses 'o' while the program is still in normal execution and the destination has not been found
+        while (goCmd && skinnyPostFound != -1) {
+            //Stop robot, show exit indication, quit OI
+            oi_setWheels(0, 0);
+            updateDisplay(display, '!');
+            oi_free(robot);
+            break;
+        }
+        BOTTOM:
     }
 }
 #pragma clang diagnostic pop
