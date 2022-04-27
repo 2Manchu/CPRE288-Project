@@ -51,6 +51,17 @@ void move_backward(oi_t *sensor_data, int distance_mm) {
     while (sum > 0) {
         oi_update(sensor_data);
         sum += sensor_data->distance;
+
+        //Slight mods to make sure we stop if we're about to go out of bounds when going backward
+        if (sensor_data->cliffFrontLeftSignal > 2500 || sensor_data->cliffFrontLeftSignal < 500 ||
+                 sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
+            oi_setWheels(0,0);
+        }
+            //If we have a right sensor detection
+        else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
+                sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
+            oi_setWheels(0,0);
+        }
     }
 
     oi_setWheels(0, 0);

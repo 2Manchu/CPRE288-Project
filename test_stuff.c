@@ -41,7 +41,7 @@ int gaps[14][2] = {'\0'};
  */
 int skinnyPostFound = -1;
 
-void eraseObjects() {
+void clearObjects() {
     //Currently hardcoded for size of objects array, adjust for size of array
     int i, j;
     for(i = 0; i < 15; ++i) {
@@ -113,7 +113,7 @@ void scanSweep(scanInstance scan) {
 }
 
 int findObjects(scanInstance scan) {
-    eraseObjects();
+    clearObjects();
     int objectStartDeg, objectEndDeg, angularWidth;
     double arcLength;
     int i, j;

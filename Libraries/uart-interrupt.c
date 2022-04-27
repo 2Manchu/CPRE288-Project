@@ -27,6 +27,7 @@ volatile int goForward = 119;   //letter 'w' goes forward
 volatile int goBackward = 115;  //letter 's' goes backward
 volatile int turnLeft = 97;     //letter 'a' turns left
 volatile int turnRight = 100;   //letter 'd' turns right
+volatile int scanKey = 102;     //letter 'f' starts a scan
 volatile int movementCode = -1;
 
 void uart_interrupt_init(void){
@@ -180,8 +181,11 @@ void UART1_Handler(void)
             {
               goCmd = 1;
             }
-            if (byte_received == manualKey) {
-                manualMode = !manualMode;
+            if (byte_received == manualKey && manualMode == 0) {
+                manualMode = 1;
+            }
+            else if (byte_received == manualKey && manualMode != 0) {
+                manualMode = 0;
             }
             else if (byte_received == stop_byte) {
                 goCmd = 0;

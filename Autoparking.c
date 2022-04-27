@@ -36,12 +36,20 @@ int objects[15][4] = { '\0' };
 int gaps[14][3] = {'\0'};
 
 /*
- * 0 if there is no skinny post in range of scan
- * 1 if skinny post has been found
+ * This variable is only used when we find the parking zone. It keeps track of the locations of all the skinny objects surrounding the zone
+ * The first dimension is the number of the skinny object. The second stores its angular position relative to the robot
+ */
+int skinnyObjects[4][1];
+
+/*
+ * -1 if there is no skinny post in range of scan
+ * 1 if there is a skinny post
  */
 int skinnyPostFound = -1;
 
-void eraseObjects() {
+int skinnyIndex = 0;
+
+void clearObjects() {
     int i, j;
     //Currently hardcoded for size of objects array, adjust for size of array
     for(i = 0; i < 15; ++i) {
@@ -49,6 +57,33 @@ void eraseObjects() {
             objects[i][j] = '\0';
         }
     }
+}
+
+void clearGaps (void) {
+    int i;
+    int j;
+    for (i = 0; i < 14; i++) {
+        for (j = 0; j < 3; j++) {
+            gaps[i][j] = '\0';
+        }
+    }
+}
+
+void clearSkinny (void) {
+    int i;
+    int j;
+    for (i = 0; i < 4; i++) {
+        for (j = 0; j < 1; j++) {
+            skinnyObjects[i][j] = '\0';
+        }
+    }
+}
+
+int getNumSkinnys() {
+    int i = 0;
+    while (skinnyObjects[i][0] != '\0') i++;
+
+    return i;
 }
 
 void updateDisplay(char display[], char keyPress) {
@@ -105,7 +140,9 @@ void scanSweep(scanInstance scan) {
 }
 
 int findObjects(scanInstance scan) {
-    eraseObjects();
+    clearObjects();
+    clearSkinny();
+    skinnyIndex = 0;
     int objectStartDeg, objectEndDeg, angularWidth;
     double arcLength;
     int i, j;
@@ -126,6 +163,14 @@ int findObjects(scanInstance scan) {
             objectEndDeg = i + 2;
             i += 2;
         }
+
+        //Make sure we don't include any 2 degree objects as these are fake and will falsely trigger the end zone detection.
+        if (objectEndDeg - objectStartDeg <= 2) {
+            isObjFound = 0;
+            //Decrement i once since it will have been incorrectly incremented by the previous code since we didn't really have an object detected
+            i -= 2;
+        }
+
         if (isObjFound) {
             //Find angular position of the middle of the detected object
             int objAngPos = (objectStartDeg + objectEndDeg) / 2;
@@ -145,7 +190,9 @@ int findObjects(scanInstance scan) {
             objects[objNum][2] = (int)arcLength;
             //TODO Change number below to appropriate width of skinny
             if(objects[objNum][2] <= 9) {
-                skinnyPostFound = objNum;
+                skinnyObjects[skinnyIndex][objAngPos];
+                skinnyIndex++;
+                skinnyPostFound = 1;
             }
             objNum++;
             i += 2;
@@ -189,16 +236,6 @@ int findObjects(scanInstance scan) {
         }
     }
     return objNum;
-}
-
-void clearGaps (void) {
-    int i;
-    int j;
-    for (i = 0; i < 14; i++) {
-        for (j = 0; j < 3; j++) {
-            gaps[i][j] = "\0";
-        }
-    }
 }
 
 int findGaps(int numObjs) {
@@ -322,16 +359,16 @@ void main() {
         //cliff sensors pick up blue tape that mark the end zone, which will then trigger the parking sequence
     while (1) {
         while (goCmd && !manualMode && skinnyPostFound == -1) {
-            if (manualMode) {
+            if (manualMode == 1) {
                 uart_sendStr("!MANUAL MODE ENTERED\r\n");
                 goto BOTTOM;
             }
-            //Adjust position of object relative to robot, negative is to right, positive to left
             int numGaps = 0;
             int closestGap = -1;
             int distToGap = -1;
             int gapAngPos = -1;
 
+            //Do initial scan
             scanSweep(scan);
             int numObjs = findObjects(scan);
             //TODO skinny post found sequence
@@ -341,7 +378,6 @@ void main() {
             }
 
             //Special cases if there's no gaps to go
-            //Typed out for clarity
             if (numObjs == 0) {
                 moveStatus = move_forward(robot, 350);
             }
@@ -369,9 +405,15 @@ void main() {
                 }
 
                 distToGap = gaps[closestGap][2];
-                moveStatus = move_forward(robot, (distToGap + 10) * 10);
+                //Check to make sure we fit thru the gap
+                if (gaps[closestGap][0] >= 35) {
+                    moveStatus = move_forward(robot, (distToGap + 10) * 10);
+                }
+                //If not then we move forward a little bit and scan again
+                else {
+                    move_forward(robot, 100);
+                }
             }
-            //TODO: Move into gaps ^^^
 
             if (moveStatus == 1) {
                 turnRightAngle(robot, -90);
@@ -390,7 +432,7 @@ void main() {
         }
 
         while (goCmd && manualMode && skinnyPostFound == -1) {
-            if (!manualMode) {
+            if (manualMode == 0) {
                 uart_sendStr("!ENTERING AUTONOMOUS MODE\r\n");
                 break;
             }
@@ -413,18 +455,23 @@ void main() {
 
         }
 
-
-
-        //Just added an if statement here to prevent it from executing this code when goCmd is no longer true.
-        //This will occur when the user issues presses 'o' while the program is still in normal execution and the destination has not been found
+        //Our parking zone detected logic
+        //IMPORTANT NOTE, IN THIS MODE THE
         while (goCmd && skinnyPostFound != -1) {
-            //Stop robot, show exit indication, quit OI
+            //Start by running a scan. If we see skinny objects, they will be logged into the skinnyObjects array.
+            //Go through that and see how many we have. If we have 1, go towards the object. If we have 2 then shoot the gap
+        }
+
+        //Emergency stop code
+        if (goCmd == 0) {
             oi_setWheels(0, 0);
             updateDisplay(display, '!');
             oi_free(robot);
             break;
         }
+
         BOTTOM:
+        continue;
     }
 }
 #pragma clang diagnostic pop
