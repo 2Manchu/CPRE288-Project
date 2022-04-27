@@ -14,7 +14,7 @@
 #include "Libraries/scan.h"
 #include "Libraries/movement.h"
 
-#define IR_THRESHOLD_VAL 650
+#define IR_THRESHOLD_VAL 450
 #define ROBOT_WIDTH 35
 
 /*
@@ -104,6 +104,14 @@ void scanSweep(scanInstance scan) {
         int i;
         doScan(currAngle, &scan);
 
+        float pingDist = scan.pingDist;
+        //Read PING distance into data points
+        dataPoints[currAngle][0] = pingDist;
+
+        int irDist = scan.irRaw;
+        dataPoints[currAngle][1] = irDist;
+
+        /*
         //Send the angle we just scanned to putty
         char angle[4] = { '\0' };
         sprintf(angle, "%d", currAngle);
@@ -115,9 +123,7 @@ void scanSweep(scanInstance scan) {
 
         //Send the initial ping distance to putty
         char ping[5] = { '\0' };
-        float pingDist = scan.pingDist;
-        //Read PING distance into data points
-        dataPoints[currAngle][0] = pingDist;
+
         sprintf(ping, "%f", pingDist);
         for (i = 0; i < 6; i++) {
             uart_sendChar(ping[i]);
@@ -128,14 +134,14 @@ void scanSweep(scanInstance scan) {
 
         //Send the IR distance to putty
         char ir[5] = { '\0' };
-        int irDist = scan.irRaw;
-        dataPoints[currAngle][1] = irDist;
+
         sprintf(ir, "%d", irDist);
         for (i = 0; i < 5; i++) {
             uart_sendChar(ir[i]);
         }
         uart_sendChar('\r');
         uart_sendChar('\n');
+        */
     }
 }
 
@@ -167,8 +173,6 @@ int findObjects(scanInstance scan) {
         //Make sure we don't include any 2 degree objects as these are fake and will falsely trigger the end zone detection.
         if (objectEndDeg - objectStartDeg <= 2) {
             isObjFound = 0;
-            //Decrement i once since it will have been incorrectly incremented by the previous code since we didn't really have an object detected
-            i -= 2;
         }
 
         if (isObjFound) {
@@ -191,8 +195,8 @@ int findObjects(scanInstance scan) {
             objects[objNum][2] = (int)arcLength;
             //TODO Change number below to appropriate width of skinny
             if(objects[objNum][2] <= 9) {
-                skinnyObjects[skinnyIndex][objAngPos];
-                skinnyObjects[skinnyIndex][pingDistToObj];
+                skinnyObjects[skinnyIndex][0] = objAngPos;
+                skinnyObjects[skinnyIndex][1] = pingDistToObj;
                 skinnyIndex++;
                 skinnyPostFound = 1;
             }
@@ -247,8 +251,6 @@ int findGaps(int numObjs) {
     for(i = 0; i < numObjs - 1; i++) {
         //Angular position to center of gap
         gaps[i][1] = (objects[i][0] + objects[i + 1][0]) / 2;
-        uart_sendStr((const char *) gaps[i][1]);
-        uart_sendStr("\t\t");
 
         //Angular width of gap
         int angularWidthGap = objects[i + 1][0] - objects[i][0];
@@ -264,11 +266,14 @@ int findGaps(int numObjs) {
             distToSmallestObj = objects[i][1];
             gaps[i][2] = distToSmallestObj;
         }
-        uart_sendStr((const char *) distToSmallestObj);
-        uart_sendStr("\t\t");
+
         //Linear width of gap
         gaps[i][0] = 2 * distToSmallestObj * sin(angularWidthGap / 2);
         uart_sendStr("\r\n");
+
+        char str[50] = {'\0'};
+        sprintf(str, "%d\t\t%d\t\t%d\r\n", gaps[i][1], distToSmallestObj, gaps[i][0]);
+        uart_sendStr(str);
     }
 
     return i;
@@ -330,9 +335,9 @@ void main() {
 
     //Servo calibration actions, uncomment when doing new robot
     //Current for CYBOT 12
-    //servo_calibrate();
-    set_left(37200);
-    set_right(9400);
+    servo_calibrate();
+    set_left(35600);
+    set_right(7200);
 
     //Create an open interface object
     oi_t *robot = oi_alloc();
@@ -363,7 +368,7 @@ void main() {
         while (goCmd && !manualMode && skinnyPostFound == -1) {
             if (manualMode == 1) {
                 uart_sendStr("!MANUAL MODE ENTERED\r\n");
-                goto BOTTOM;
+                break;
             }
             int numGaps = 0;
             int closestGap = -1;
@@ -376,7 +381,7 @@ void main() {
             //TODO skinny post found sequence
             if (skinnyPostFound != -1) {
                 uart_sendStr("!PARKING SEQUENCE INITIATED\r\n");
-                goto BOTTOM;
+                break;
             }
 
             //Special cases if there's no gaps to go
@@ -417,6 +422,7 @@ void main() {
                 }
             }
 
+            //Code for object avoidance after the above actions are taken
             if (moveStatus == 1) {
                 turnRightAngle(robot, -90);
             }
@@ -458,11 +464,11 @@ void main() {
         }
 
         //Our parking zone detected logic
-        //IMPORTANT NOTE, IN THIS MODE THE
         while (goCmd && skinnyPostFound != -1) {
             //Start by running a scan. If we see skinny objects, they will be logged into the skinnyObjects array.
             //Go through that and see how many we have. If we have 1, go towards the object. If we have 2 then shoot the gap
             scanSweep(scan);
+            int numObjs = findObjects(scan);
             int howManySkinny = getNumSkinnys();
             //If we for some reason lose sight of the destination then return to normal mode
             if (howManySkinny == 0) {
@@ -471,14 +477,31 @@ void main() {
             }
             //If 1 skinny then go towards it
             else if (howManySkinny == 1) {
-                int turnAng = skinnyObjects[0][1] - 90;
+                int turnAng = skinnyObjects[0][0] - 90;
                 if (turnAng > 0) {
                     turnLeftAngle(robot, turnAng);
                 }
                 else if (turnAng < 0) {
                     turnRightAngle(robot, turnAng);
                 }
-                //TODO ADD AVOIDANCE LOGIC IN PARKING MODE
+
+                moveStatus = move_forward(robot, skinnyObjects[0][1] * 10);
+
+                //Code for object avoidance after the above actions are taken
+                if (moveStatus == 1) {
+                    turnRightAngle(robot, -90);
+                }
+                else if (moveStatus == 2) {
+                    turnLeftAngle(robot, 90);
+                }
+                    //We have a left side cliff detection
+                else if (moveStatus == 4) {
+                    turnRightAngle(robot, -90);
+                }
+                    //We have a right side cliff detection
+                else if (moveStatus == 5) {
+                    turnLeftAngle(robot, 90);
+                }
             }
             //If more than 1 skinny, go between the first (rightmost) and the last (leftmost)
             else {
@@ -498,7 +521,24 @@ void main() {
                 else if (gapAng < 0) {
                     turnRightAngle(robot, gapAng);
                 }
-                move_forward(robot, gapDist);
+
+                moveStatus = move_forward(robot, gapDist);
+
+                //Code for object avoidance after the above actions are taken
+                if (moveStatus == 1) {
+                    turnRightAngle(robot, -90);
+                }
+                else if (moveStatus == 2) {
+                    turnLeftAngle(robot, 90);
+                }
+                    //We have a left side cliff detection
+                else if (moveStatus == 4) {
+                    turnRightAngle(robot, -90);
+                }
+                    //We have a right side cliff detection
+                else if (moveStatus == 5) {
+                    turnLeftAngle(robot, 90);
+                }
                 //TODO ADD AVOIDANCE LOGIC IN PARKING MODE
             }
         }
@@ -510,9 +550,6 @@ void main() {
             oi_free(robot);
             break;
         }
-
-        BOTTOM:
-        continue;
     }
 }
 #pragma clang diagnostic pop

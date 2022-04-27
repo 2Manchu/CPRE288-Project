@@ -9,9 +9,9 @@
 #define RIGHT_TURN_OFFSET 14
 
 int move_forward(oi_t *sensor_data, int distance_mm) {
-    uart_sendStr("!GOING FORWARD ");
-    uart_sendStr(distance_mm / 10);
-    uart_sendStr("\r\n");
+    char str[50] = {'\0'};
+    sprintf(str, "!GOING FORWARD %d cm\r\n", distance_mm / 10);
+    uart_sendStr(str);
     oi_setWheels(150, 150);
     int sum = 0;
 
@@ -53,9 +53,10 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
 }
 
 void move_backward(oi_t *sensor_data, int distance_mm) {
-    uart_sendStr("!GOING BACKWARD ");
-    uart_sendStr(distance_mm / 10);
-    uart_sendStr("\r\n");
+    char str[50] = {'\0'};
+    sprintf(str, "!GOING BACKWARD %d cm\r\n", distance_mm / 10);
+    uart_sendStr(str);
+
     oi_setWheels(-175,-175);
     int sum = distance_mm;
 
@@ -81,9 +82,9 @@ void move_backward(oi_t *sensor_data, int distance_mm) {
 }
 
 int turnLeftAngle(oi_t *sensor_data, int angleToTurnTo) {
-    uart_sendStr("!TURNING LEFT BY ");
-    uart_sendStr(angleToTurnTo);
-    uart_sendStr("\r\n");
+    char str[50] = {'\0'};
+    sprintf(str, "!TURNING LEFT %d degrees\r\n", angleToTurnTo);
+    uart_sendStr(str);
 
     double sum = 0;
     oi_setWheels(100, -100);
@@ -107,9 +108,9 @@ int turnLeftAngle(oi_t *sensor_data, int angleToTurnTo) {
 }
 
 int turnRightAngle(oi_t *sensor_data, int angleToTurnTo) {
-    uart_sendStr("!TURNING RIGHT BY ");
-    uart_sendStr(angleToTurnTo);
-    uart_sendStr("\r\n");
+    char str[50] = {'\0'};
+    sprintf(str, "!TURNING RIGHT %d degrees\r\n", angleToTurnTo);
+    uart_sendStr(str);
 
     double sum = 0;
     int corrAngle = angleToTurnTo + RIGHT_TURN_OFFSET;
