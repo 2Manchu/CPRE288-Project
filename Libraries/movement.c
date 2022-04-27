@@ -3,11 +3,15 @@
 //
 
 #include "movement.h"
+#include "uart-interrupt.h"
 
 #define LEFT_TURN_OFFSET 12
 #define RIGHT_TURN_OFFSET 14
 
 int move_forward(oi_t *sensor_data, int distance_mm) {
+    uart_sendStr("!GOING FORWARD ");
+    uart_sendStr(distance_mm / 10);
+    uart_sendStr("\r\n");
     oi_setWheels(150, 150);
     int sum = 0;
 
@@ -16,11 +20,13 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
         sum += sensor_data->distance;
 
         if (sensor_data->bumpLeft) {
+            uart_sendStr("!LEFT BUMP DETECTED\r\n");
             oi_setWheels(0,0);
             move_backward(sensor_data, 150);
             return 1;
         }
         else if (sensor_data->bumpRight) {
+            uart_sendStr("!RIGHT BUMP DETECTED\r\n");
             oi_setWheels(0,0);
             move_backward(sensor_data, 150);
             return 2;
@@ -28,6 +34,7 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
         //If we have a left sensor detection
         else if (sensor_data->cliffFrontLeftSignal > 2500 || sensor_data->cliffFrontLeftSignal < 500 ||
                  sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
+            uart_sendStr("!LEFT CLIFF/BOUND DETECTED\r\n");
             oi_setWheels(0,0);
             move_backward(sensor_data, 150);
             return 4;
@@ -35,6 +42,7 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
         //If we have a right sensor detection
         else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
                 sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
+            uart_sendStr("!RIGHT CLIFF/BOUND DETECTED\r\n");
             oi_setWheels(0,0);
             move_backward(sensor_data, 150);
             return 5;
@@ -45,6 +53,9 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
 }
 
 void move_backward(oi_t *sensor_data, int distance_mm) {
+    uart_sendStr("!GOING BACKWARD ");
+    uart_sendStr(distance_mm / 10);
+    uart_sendStr("\r\n");
     oi_setWheels(-175,-175);
     int sum = distance_mm;
 
@@ -55,11 +66,13 @@ void move_backward(oi_t *sensor_data, int distance_mm) {
         //Slight mods to make sure we stop if we're about to go out of bounds when going backward
         if (sensor_data->cliffFrontLeftSignal > 2500 || sensor_data->cliffFrontLeftSignal < 500 ||
                  sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
+            uart_sendStr("!LEFT CLIFF/BOUND DETECTED\r\n");
             oi_setWheels(0,0);
         }
             //If we have a right sensor detection
         else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
                 sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
+            uart_sendStr("!RIGHT CLIFF/BOUND DETECTED\r\n");
             oi_setWheels(0,0);
         }
     }
@@ -68,6 +81,10 @@ void move_backward(oi_t *sensor_data, int distance_mm) {
 }
 
 int turnLeftAngle(oi_t *sensor_data, int angleToTurnTo) {
+    uart_sendStr("!TURNING LEFT BY ");
+    uart_sendStr(angleToTurnTo);
+    uart_sendStr("\r\n");
+
     double sum = 0;
     oi_setWheels(100, -100);
 
@@ -90,6 +107,9 @@ int turnLeftAngle(oi_t *sensor_data, int angleToTurnTo) {
 }
 
 int turnRightAngle(oi_t *sensor_data, int angleToTurnTo) {
+    uart_sendStr("!TURNING RIGHT BY ");
+    uart_sendStr(angleToTurnTo);
+    uart_sendStr("\r\n");
 
     double sum = 0;
     int corrAngle = angleToTurnTo + RIGHT_TURN_OFFSET;

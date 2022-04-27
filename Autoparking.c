@@ -37,9 +37,9 @@ int gaps[14][3] = {'\0'};
 
 /*
  * This variable is only used when we find the parking zone. It keeps track of the locations of all the skinny objects surrounding the zone
- * The first dimension is the number of the skinny object. The second stores its angular position relative to the robot
+ * The first dimension is the number of the skinny object. The second stores its angular position relative to the robot and the distance to the skinny
  */
-int skinnyObjects[4][1];
+int skinnyObjects[4][2];
 
 /*
  * -1 if there is no skinny post in range of scan
@@ -179,7 +179,8 @@ int findObjects(scanInstance scan) {
             }
             objects[objNum][0] = objAngPos;
             //Putting the PING distance now (?!?!?!) from the middle angle of the object from datapoints array into the distance to object field in objects array
-            objects[objNum][1] = dataPoints[objects[objNum][0]][0];
+            int pingDistToObj = dataPoints[objects[objNum][0]][0];
+            objects[objNum][1] = pingDistToObj;
             //Assign the object an angular width
             angularWidth = objectEndDeg - objectStartDeg;
             objects[objNum][3] = angularWidth;
@@ -191,6 +192,7 @@ int findObjects(scanInstance scan) {
             //TODO Change number below to appropriate width of skinny
             if(objects[objNum][2] <= 9) {
                 skinnyObjects[skinnyIndex][objAngPos];
+                skinnyObjects[skinnyIndex][pingDistToObj];
                 skinnyIndex++;
                 skinnyPostFound = 1;
             }
@@ -249,7 +251,7 @@ int findGaps(int numObjs) {
         uart_sendStr("\t\t");
 
         //Angular width of gap
-        int angularWidth = objects[i + 1][0] - objects[i][0];
+        int angularWidthGap = objects[i + 1][0] - objects[i][0];
 
         //Distance to gap
         int distToSmallestObj;
@@ -265,7 +267,7 @@ int findGaps(int numObjs) {
         uart_sendStr((const char *) distToSmallestObj);
         uart_sendStr("\t\t");
         //Linear width of gap
-        gaps[i][0] = 2 * distToSmallestObj * sin(angularWidth / 2);
+        gaps[i][0] = 2 * distToSmallestObj * sin(angularWidthGap / 2);
         uart_sendStr("\r\n");
     }
 
@@ -460,6 +462,45 @@ void main() {
         while (goCmd && skinnyPostFound != -1) {
             //Start by running a scan. If we see skinny objects, they will be logged into the skinnyObjects array.
             //Go through that and see how many we have. If we have 1, go towards the object. If we have 2 then shoot the gap
+            scanSweep(scan);
+            int howManySkinny = getNumSkinnys();
+            //If we for some reason lose sight of the destination then return to normal mode
+            if (howManySkinny == 0) {
+                skinnyPostFound = -1;
+                break;
+            }
+            //If 1 skinny then go towards it
+            else if (howManySkinny == 1) {
+                int turnAng = skinnyObjects[0][1] - 90;
+                if (turnAng > 0) {
+                    turnLeftAngle(robot, turnAng);
+                }
+                else if (turnAng < 0) {
+                    turnRightAngle(robot, turnAng);
+                }
+                //TODO ADD AVOIDANCE LOGIC IN PARKING MODE
+            }
+            //If more than 1 skinny, go between the first (rightmost) and the last (leftmost)
+            else {
+                int gapAng = skinnyObjects[skinnyIndex - 1][0] - skinnyObjects[0][0];
+                int gapDist;
+
+                if (skinnyObjects[skinnyIndex - 1][1] > skinnyObjects[0][0]) {
+                    gapDist = skinnyObjects[skinnyIndex - 1][1];
+                }
+                else {
+                    gapDist = skinnyObjects[0][0];
+                }
+
+                if (gapAng > 0) {
+                    turnLeftAngle(robot, gapAng);
+                }
+                else if (gapAng < 0) {
+                    turnRightAngle(robot, gapAng);
+                }
+                move_forward(robot, gapDist);
+                //TODO ADD AVOIDANCE LOGIC IN PARKING MODE
+            }
         }
 
         //Emergency stop code
