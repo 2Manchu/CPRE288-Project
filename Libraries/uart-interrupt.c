@@ -28,6 +28,9 @@ volatile int goBackward = 115;  //letter 's' goes backward
 volatile int turnLeft = 97;     //letter 'a' turns left
 volatile int turnRight = 100;   //letter 'd' turns right
 volatile int scanKey = 102;     //letter 'f' starts a scan
+volatile int turnLeft90 = 122;  //letter 'z' turns left 90 degrees
+volatile int turnRight90 = 99;  //letter 'c' turns right 90 degrees
+volatile int turnAround = 120;  //letter 'x' turns bot 180 degrees
 volatile int movementCode = -1;
 
 void uart_interrupt_init(void){
@@ -183,9 +186,11 @@ void UART1_Handler(void)
             }
             if (byte_received == manualKey && manualMode == 0) {
                 manualMode = 1;
+                uart_sendStr("Set manual to 1\r\n");
             }
             else if (byte_received == manualKey && manualMode != 0) {
                 manualMode = 0;
+                uart_sendStr("Set manual to 0\r\n");
             }
             else if (byte_received == stop_byte) {
                 goCmd = 0;
@@ -201,6 +206,18 @@ void UART1_Handler(void)
             }
             else if (byte_received == turnRight) {
                 movementCode = 4;
+            }
+            else if (byte_received == scanKey) {
+                movementCode = 5;
+            }
+            else if(byte_received == turnLeft90) {
+                movementCode = 6;
+            }
+            else if(byte_received == turnRight90) {
+                movementCode = 7;
+            }
+            else if(byte_received == turnAround) {
+                movementCode = 8;
             }
 
         }

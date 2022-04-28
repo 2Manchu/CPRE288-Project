@@ -5,8 +5,8 @@
 #include "movement.h"
 #include "uart-interrupt.h"
 
-#define LEFT_TURN_OFFSET 12
-#define RIGHT_TURN_OFFSET 14
+#define LEFT_TURN_OFFSET 0
+#define RIGHT_TURN_OFFSET 0
 
 int move_forward(oi_t *sensor_data, int distance_mm) {
     char str[50] = {'\0'};
@@ -63,19 +63,6 @@ void move_backward(oi_t *sensor_data, int distance_mm) {
     while (sum > 0) {
         oi_update(sensor_data);
         sum += sensor_data->distance;
-
-        //Slight mods to make sure we stop if we're about to go out of bounds when going backward
-        if (sensor_data->cliffFrontLeftSignal > 2500 || sensor_data->cliffFrontLeftSignal < 500 ||
-                 sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
-            uart_sendStr("!LEFT CLIFF/BOUND DETECTED\r\n");
-            oi_setWheels(0,0);
-        }
-            //If we have a right sensor detection
-        else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
-                sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
-            uart_sendStr("!RIGHT CLIFF/BOUND DETECTED\r\n");
-            oi_setWheels(0,0);
-        }
     }
 
     oi_setWheels(0, 0);

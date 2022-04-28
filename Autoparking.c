@@ -14,7 +14,9 @@
 #include "Libraries/scan.h"
 #include "Libraries/movement.h"
 
-#define IR_THRESHOLD_VAL 450
+#define IR_THRESHOLD_VAL 675
+#define LEFT_TURN_OFFSET 0
+#define RIGHT_TURN_OFFSET 0
 #define ROBOT_WIDTH 35
 
 /*
@@ -111,41 +113,41 @@ void scanSweep(scanInstance scan) {
         int irDist = scan.irRaw;
         dataPoints[currAngle][1] = irDist;
 
-        /*
-        //Send the angle we just scanned to putty
-        char angle[4] = { '\0' };
-        sprintf(angle, "%d", currAngle);
-        for (i = 0; i < 4; i++) {
-            uart_sendChar(angle[i]);
+        if (manualMode == 1) {
+            //Send the angle we just scanned to putty
+            char angle[4] = {'\0'};
+            sprintf(angle, "%d", currAngle);
+            for (i = 0; i < 4; i++) {
+                uart_sendChar(angle[i]);
+            }
+            uart_sendChar('\t');
+            uart_sendChar('\t');
+
+            //Send the initial ping distance to putty
+            char ping[5] = {'\0'};
+
+            sprintf(ping, "%f", pingDist);
+            for (i = 0; i < 6; i++) {
+                uart_sendChar(ping[i]);
+            }
+            uart_sendChar('\t');
+            uart_sendChar('\t');
+            uart_sendChar('\t');
+
+            //Send the IR distance to putty
+            char ir[5] = {'\0'};
+
+            sprintf(ir, "%d", irDist);
+            for (i = 0; i < 5; i++) {
+                uart_sendChar(ir[i]);
+            }
+            uart_sendChar('\r');
+            uart_sendChar('\n');
         }
-        uart_sendChar('\t');
-        uart_sendChar('\t');
-
-        //Send the initial ping distance to putty
-        char ping[5] = { '\0' };
-
-        sprintf(ping, "%f", pingDist);
-        for (i = 0; i < 6; i++) {
-            uart_sendChar(ping[i]);
-        }
-        uart_sendChar('\t');
-        uart_sendChar('\t');
-        uart_sendChar('\t');
-
-        //Send the IR distance to putty
-        char ir[5] = { '\0' };
-
-        sprintf(ir, "%d", irDist);
-        for (i = 0; i < 5; i++) {
-            uart_sendChar(ir[i]);
-        }
-        uart_sendChar('\r');
-        uart_sendChar('\n');
-        */
     }
 }
 
-int findObjects(scanInstance scan) {
+int findObjects(scanInstance scan, oi_t *robot) {
     clearObjects();
     clearSkinny();
     skinnyIndex = 0;
@@ -171,7 +173,7 @@ int findObjects(scanInstance scan) {
         }
 
         //Make sure we don't include any 2 degree objects as these are fake and will falsely trigger the end zone detection.
-        if (objectEndDeg - objectStartDeg <= 2) {
+        if (objectEndDeg - objectStartDeg <= 4) {
             isObjFound = 0;
         }
 
@@ -194,6 +196,19 @@ int findObjects(scanInstance scan) {
             arcLength = 2.0 * M_PI * (double)radius * ((double)angularWidth / 360.0);
             objects[objNum][2] = (int)arcLength;
             //TODO Change number below to appropriate width of skinny
+
+            /*
+            if (objects[objNum][2] > 9 && skinnyPostFound == 1) {
+                if(objects[objNum][0] < 90) {
+                    turnRightAngle(robot, -180);
+                }
+                else {
+                    turnLeftAngle(robot, 180);
+                }
+                break;
+            }
+             */
+
             if(objects[objNum][2] <= 9) {
                 skinnyObjects[skinnyIndex][0] = objAngPos;
                 skinnyObjects[skinnyIndex][1] = pingDistToObj;
@@ -209,7 +224,7 @@ int findObjects(scanInstance scan) {
     char angle[4] = { '\0' };
     char irDist[5] = { '\0' };
     char linWidth[3] = { '\0' };
-    char header[39] = "AnglePos\tIR Distance\t\tLinear Width\r\n";
+    char header[39] = "AnglePos\tPG Distance\t\tLinear Width\r\n";
 
     for (i = 0; i <= 38; i++) {
         uart_sendChar(header[i]);
@@ -261,14 +276,18 @@ int findGaps(int numObjs) {
         if (objects[i][1] > objects[i + 1][1]) {
             distToSmallestObj = objects[i + 1][1];
             gaps[i][2] = distToSmallestObj;
-        }
-        else {
+        } else {
             distToSmallestObj = objects[i][1];
             gaps[i][2] = distToSmallestObj;
         }
 
         //Linear width of gap
-        gaps[i][0] = 2 * distToSmallestObj * sin(angularWidthGap / 2);
+        if (angularWidthGap < 90) {
+            gaps[i][0] = distToSmallestObj * angularWidthGap * (M_PI / 180);
+        }
+        else {
+            gaps[i][0] = distToSmallestObj * angularWidthGap * (M_PI / 180);
+        }
         uart_sendStr("\r\n");
 
         char str[50] = {'\0'};
@@ -335,9 +354,9 @@ void main() {
 
     //Servo calibration actions, uncomment when doing new robot
     //Current for CYBOT 12
-    servo_calibrate();
-    set_left(35600);
-    set_right(7200);
+    //servo_calibrate();
+    set_left(35500);
+    set_right(8000);
 
     //Create an open interface object
     oi_t *robot = oi_alloc();
@@ -365,11 +384,8 @@ void main() {
         //up, and turn, but don't move forward. Repeat sequence and essentially bounce around testing area until
         //cliff sensors pick up blue tape that mark the end zone, which will then trigger the parking sequence
     while (1) {
-        while (goCmd && !manualMode && skinnyPostFound == -1) {
-            if (manualMode == 1) {
-                uart_sendStr("!MANUAL MODE ENTERED\r\n");
-                break;
-            }
+        //removed skinnyPostFound == -1
+        while (goCmd && !manualMode) {
             int numGaps = 0;
             int closestGap = -1;
             int distToGap = -1;
@@ -377,7 +393,7 @@ void main() {
 
             //Do initial scan
             scanSweep(scan);
-            int numObjs = findObjects(scan);
+            int numObjs = findObjects(scan, robot);
             //TODO skinny post found sequence
             if (skinnyPostFound != -1) {
                 uart_sendStr("!PARKING SEQUENCE INITIATED\r\n");
@@ -404,10 +420,10 @@ void main() {
 
                 gapAngPos = gaps[closestGap][1];
                 gapAngPos = gapAngPos - 90;
-                if (gapAngPos > 90) {
+                if (gapAngPos > 0) {
                     turnLeftAngle(robot, gapAngPos);
                 }
-                else if (gapAngPos < 90 ) {
+                else if (gapAngPos < 0 ) {
                     turnRightAngle(robot, gapAngPos);
                 }
 
@@ -439,36 +455,68 @@ void main() {
             }
         }
 
-        while (goCmd && manualMode && skinnyPostFound == -1) {
+        //removed skinnyPostFound == -1
+        while (goCmd && manualMode) {
             if (manualMode == 0) {
                 uart_sendStr("!ENTERING AUTONOMOUS MODE\r\n");
                 break;
             }
+            //Forward
             if (movementCode == 1) {
                 move_forward(robot, 100);
                 movementCode = 0;
-            } else if (movementCode == 2) {
+            }
+            //Backward
+            else if (movementCode == 2) {
                 //do a jank backwards thing spin around, move forward, then spin back to avoid holes
-                turnLeftAngle(robot, 180);
+                turnLeftAngle(robot, 180 + LEFT_TURN_OFFSET);
                 move_forward(robot, 100);
-                turnRightAngle(robot, 180);
+                turnRightAngle(robot, -180 + RIGHT_TURN_OFFSET);
                 movementCode = 0;
-            } else if (movementCode == 3) {
-                turnLeftAngle(robot, 15);
+
+            }
+            //Left a little
+            else if (movementCode == 3) {
+                turnLeftAngle(robot, 15 + LEFT_TURN_OFFSET);
                 movementCode = 0;
-            } else if (movementCode == 4) {
-                turnRightAngle(robot, -15);
+            }
+            //Right a little
+            else if (movementCode == 4) {
+                turnRightAngle(robot, -15 + RIGHT_TURN_OFFSET);
+                movementCode = 0;
+            }
+            //Scan
+            else if (movementCode == 5) {
+                scanSweep(scan);
+                int numObjects = findObjects(scan, robot);
+                findGaps(numObjects);
+                movementCode = 0;
+            }
+            //Left 90
+            else if(movementCode == 6) {
+                turnLeftAngle(robot, 90 + LEFT_TURN_OFFSET);
+                movementCode = 0;
+            }
+            //Right 90
+            else if(movementCode == 7) {
+                turnRightAngle(robot, -90 + RIGHT_TURN_OFFSET);
+                movementCode = 0;
+            }
+            //Turn around
+            else if(movementCode == 8) {
+                turnLeftAngle(robot, 180 + LEFT_TURN_OFFSET);
                 movementCode = 0;
             }
 
         }
 
+        //removed skinnyPostFound != -1
         //Our parking zone detected logic
-        while (goCmd && skinnyPostFound != -1) {
+        while (goCmd && 0) {
             //Start by running a scan. If we see skinny objects, they will be logged into the skinnyObjects array.
             //Go through that and see how many we have. If we have 1, go towards the object. If we have 2 then shoot the gap
             scanSweep(scan);
-            int numObjs = findObjects(scan);
+            int numObjs = findObjects(scan, robot);
             int howManySkinny = getNumSkinnys();
             //If we for some reason lose sight of the destination then return to normal mode
             if (howManySkinny == 0) {
