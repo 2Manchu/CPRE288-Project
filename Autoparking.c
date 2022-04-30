@@ -355,8 +355,8 @@ void main() {
     //Servo calibration actions, uncomment when doing new robot
     //Current for CYBOT 12
     //servo_calibrate();
-    set_left(35500);
-    set_right(8000);
+    set_left(34700);
+    set_right(7900);
 
     //Create an open interface object
     oi_t *robot = oi_alloc();
@@ -477,12 +477,12 @@ void main() {
             }
             //Left a little
             else if (movementCode == 3) {
-                turnLeftAngle(robot, 15 + LEFT_TURN_OFFSET);
+                turnLeftAngle(robot, 10 + LEFT_TURN_OFFSET);
                 movementCode = 0;
             }
             //Right a little
             else if (movementCode == 4) {
-                turnRightAngle(robot, -15 + RIGHT_TURN_OFFSET);
+                turnRightAngle(robot, -10 + RIGHT_TURN_OFFSET);
                 movementCode = 0;
             }
             //Scan
@@ -594,7 +594,8 @@ void main() {
         //Emergency stop code
         if (goCmd == 0) {
             oi_setWheels(0, 0);
-            updateDisplay(display, '!');
+            lcd_printf("Program exited/\nDestination found");
+            uart_sendStr("Exit/Destination found");
             oi_free(robot);
             break;
         }

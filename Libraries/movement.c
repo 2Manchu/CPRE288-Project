@@ -36,7 +36,7 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
                  sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
             uart_sendStr("!LEFT CLIFF/BOUND DETECTED\r\n");
             oi_setWheels(0,0);
-            move_backward(sensor_data, 150);
+            move_backward(sensor_data, 100);
             return 4;
         }
         //If we have a right sensor detection
