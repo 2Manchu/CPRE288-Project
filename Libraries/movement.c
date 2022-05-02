@@ -22,29 +22,41 @@ int move_forward(oi_t *sensor_data, int distance_mm) {
         if (sensor_data->bumpLeft) {
             uart_sendStr("!LEFT BUMP DETECTED\r\n");
             oi_setWheels(0,0);
-            move_backward(sensor_data, 150);
+            move_backward(sensor_data, sum);
             return 1;
         }
         else if (sensor_data->bumpRight) {
             uart_sendStr("!RIGHT BUMP DETECTED\r\n");
             oi_setWheels(0,0);
-            move_backward(sensor_data, 150);
+            move_backward(sensor_data, sum);
             return 2;
         }
         //If we have a left sensor detection
-        else if (sensor_data->cliffFrontLeftSignal > 2500 || sensor_data->cliffFrontLeftSignal < 500 ||
-                 sensor_data->cliffLeftSignal > 2500 || sensor_data->cliffLeftSignal < 500) {
-            uart_sendStr("!LEFT CLIFF/BOUND DETECTED\r\n");
+        else if (sensor_data->cliffFrontLeftSignal > 2500 ||
+                 sensor_data->cliffLeftSignal > 2500) {
+            uart_sendStr("!LEFT BOUND DETECTED\r\n");
             oi_setWheels(0,0);
-            move_backward(sensor_data, 100);
+            move_backward(sensor_data, sum);
+            return 4;
+        }
+        else if (sensor_data->cliffFrontLeftSignal < 500 || sensor_data->cliffLeftSignal < 500) {
+            uart_sendStr("!LEFT CLIFF DETECTED\r\n");
+            oi_setWheels(0,0);
+            move_backward(sensor_data, sum);
             return 4;
         }
         //If we have a right sensor detection
-        else if(sensor_data->cliffFrontRightSignal > 2500 || sensor_data->cliffFrontRightSignal < 500 ||
-                sensor_data->cliffRightSignal > 2500 || sensor_data->cliffRightSignal < 500) {
-            uart_sendStr("!RIGHT CLIFF/BOUND DETECTED\r\n");
+        else if(sensor_data->cliffFrontRightSignal > 2500 ||
+                sensor_data->cliffRightSignal > 2500) {
+            uart_sendStr("!RIGHT BOUND DETECTED\r\n");
             oi_setWheels(0,0);
-            move_backward(sensor_data, 150);
+            move_backward(sensor_data, sum);
+            return 5;
+        }
+        else if (sensor_data->cliffFrontRightSignal < 500 || sensor_data->cliffRightSignal < 500) {
+            uart_sendStr("!RIGHT CLIFF DETECTED\r\n");
+            oi_setWheels(0,0);
+            move_backward(sensor_data, sum);
             return 5;
         }
     }

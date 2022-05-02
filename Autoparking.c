@@ -323,25 +323,6 @@ int findClosestGap(int numGaps) {
 
 }
 
-/*
-int findSkinnyPost(int numObjects) {
-    int skinnyNum = -1;
-    for(int i = 0; i < numObjects; ++i) {
-
-        //Width and bounds are in mm
-        int currObjWidth = objects[i][2] / 10;
-        int lowBound = 55;
-        int highBound = currObjWidth + 61;
-
-        //Check if the current object's width is within the bounds of the correct width
-        if(currObjWidth > lowBound && currObjWidth < highBound) {
-            skinnyNum = i;
-            break;
-        }
-        return skinnyNum;
-    }
-}
- */
 
 void main() {
     timer_init();
@@ -355,8 +336,8 @@ void main() {
     //Servo calibration actions, uncomment when doing new robot
     //Current for CYBOT 12
     //servo_calibrate();
-    set_left(34700);
-    set_right(7900);
+    set_left(35700);
+    set_right(8300);
 
     //Create an open interface object
     oi_t *robot = oi_alloc();
@@ -600,5 +581,6 @@ void main() {
             break;
         }
     }
+    oi_free(robot);
 }
 #pragma clang diagnostic pop
