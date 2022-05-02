@@ -16,7 +16,7 @@ add_executable(CPRE288_Project
         Libraries/servo.h
         Libraries/uart-interrupt.c
         Libraries/uart-interrupt.h
-        Autoparking.c
+        Parking.c
         test_stuff.c
         tm4c123gh6pm_startup_ccs.c
         Libraries/tm4c123gh6pm.h Libraries/scan.c Libraries/scan.h Libraries/movement.c Libraries/movement.h)

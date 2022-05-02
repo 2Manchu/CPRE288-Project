@@ -28,7 +28,7 @@
 int dataPoints[181][2];
 
 /*
- * Dimension 1 stores object number. Dimension 2 contains angular position of object, distance to object, linear width, and radial width respectively.
+ * Dimension 1 stores object number. Dimension 2 contains angular position of object, distance to object, linear width, and angular width respectively.
  */
 int objects[15][4] = { '\0' };
 
@@ -51,6 +51,9 @@ int skinnyPostFound = -1;
 
 int skinnyIndex = 0;
 
+/*
+ * Below are some simple functions to clear arrays. They should be self-explanatory
+ */
 void clearObjects() {
     int i, j;
     //Currently hardcoded for size of objects array, adjust for size of array
@@ -88,20 +91,15 @@ int getNumSkinnys() {
     return i;
 }
 
-void updateDisplay(char display[], char keyPress) {
-    sprintf(display, "Key Pressed: %c", keyPress);
-    lcd_printf(display);
-}
-
 void scanSweep(scanInstance scan) {
     //Scan Angle Range
     doScan(0, &scan);
     timer_waitMillis(1500);
     int currAngle;
-    //Make a 180 degree sweep of the field
 
     uart_sendStr("!Degrees\t\tPING Distance (cm)\tIR Value\r\n");
 
+    //Make a 180 degree sweep of the field
     for (currAngle = 0; currAngle <= 180; currAngle += 2) {
         int i;
         doScan(currAngle, &scan);
@@ -110,9 +108,11 @@ void scanSweep(scanInstance scan) {
         //Read PING distance into data points
         dataPoints[currAngle][0] = pingDist;
 
+        //Read raw IR value into data points
         int irDist = scan.irRaw;
         dataPoints[currAngle][1] = irDist;
 
+        //Only in we're in manual mode, send the data from each angle scanned to the terminal
         if (manualMode == 1) {
             //Send the angle we just scanned to putty
             char angle[4] = {'\0'};
@@ -147,6 +147,9 @@ void scanSweep(scanInstance scan) {
     }
 }
 
+/**
+ * Find objects from the most recent scan, given a raw IR threshold value
+ */
 int findObjects(scanInstance scan, oi_t *robot) {
     clearObjects();
     clearSkinny();
@@ -172,7 +175,7 @@ int findObjects(scanInstance scan, oi_t *robot) {
             i += 2;
         }
 
-        //Make sure we don't include any 2 degree objects as these are fake and will falsely trigger the end zone detection.
+        //Make sure we don't include any <4 degree objects as these are fake and will falsely trigger the end zone detection.
         if (objectEndDeg - objectStartDeg <= 4) {
             isObjFound = 0;
         }
@@ -195,20 +198,8 @@ int findObjects(scanInstance scan, oi_t *robot) {
             int radius = objects[objNum][1];
             arcLength = 2.0 * M_PI * (double)radius * ((double)angularWidth / 360.0);
             objects[objNum][2] = (int)arcLength;
-            //TODO Change number below to appropriate width of skinny
 
-            /*
-            if (objects[objNum][2] > 9 && skinnyPostFound == 1) {
-                if(objects[objNum][0] < 90) {
-                    turnRightAngle(robot, -180);
-                }
-                else {
-                    turnLeftAngle(robot, 180);
-                }
-                break;
-            }
-             */
-
+            //If we've detected a skinny object, then assign it an angular position and a distance from robot
             if(objects[objNum][2] <= 9) {
                 skinnyObjects[skinnyIndex][0] = objAngPos;
                 skinnyObjects[skinnyIndex][1] = pingDistToObj;
@@ -226,10 +217,10 @@ int findObjects(scanInstance scan, oi_t *robot) {
     char linWidth[3] = { '\0' };
     char header[39] = "AnglePos\tPG Distance\t\tLinear Width\r\n";
 
-    for (i = 0; i <= 38; i++) {
-        uart_sendChar(header[i]);
-    }
+    uart_sendStr(header);
 
+    //If the angular width of the object is greater than 4 degrees, then send the object's info to putty
+    //Technically this check is unnecessary as we check to ensure that <4 degree objects are not included in the array in the first place
     for (j = 0; j < objNum; j++) {
         if (objects[j][3] > 4) {
             sprintf(angle, "%d", objects[j][0]);
@@ -259,6 +250,12 @@ int findObjects(scanInstance scan, oi_t *robot) {
     return objNum;
 }
 
+/**
+ * Given an objects[][] array, find gaps in the objects as well as the positions, and widths
+ * **HIGHLY EXPERIMENTAL**
+ * @param numObjs How many objects are contained within the array from the current scan
+ * @return An int corresponding to the number of gaps found
+ */
 int findGaps(int numObjs) {
     clearGaps();
     int i;
@@ -298,6 +295,11 @@ int findGaps(int numObjs) {
     return i;
 }
 
+/**
+ * Function that finds the index of the closest gap in gaps[][]
+ * @param numGaps The number of gaps within gaps array
+ * @return An int of the index of the closest gap
+ */
 int findClosestGap(int numGaps) {
     int i;
     int smallestGapNum;
@@ -323,7 +325,12 @@ int findClosestGap(int numGaps) {
 
 }
 
-
+/**
+ * Main function containing autonomous and manual control
+ * **PLEASE NOTE:**
+ * We demoed in full manual mode because autonomous just wasn't there in terms of polish.
+ * Autonomous code was still present but just not utilized.
+ */
 void main() {
     timer_init();
     lcd_init();
@@ -334,7 +341,7 @@ void main() {
     uart_interrupt_init();
 
     //Servo calibration actions, uncomment when doing new robot
-    //Current for CYBOT 12
+    //Current for CYBOT 8
     //servo_calibrate();
     set_left(35700);
     set_right(8300);
@@ -354,13 +361,9 @@ void main() {
     uart_sendStr("!STARTING SEQUENCE\r\n");
 
     //Print the table header for the initial sweep of the field
-    //TODO: IF WE ARE DOING OUTPUT AS CSV WE'LL HAVE TO CHANGE THIS
 
     #pragma clang diagnostic push
     #pragma ide diagnostic ignored "EndlessLoop"
-        //TODO: NAVIGATE BETWEEN OBJECTS, AND GO FORWARD IF NONE FOUND. ADD APPROPRIATE ACTIONS IF WE HIT A LINE OR CLIFF
-        //TODO: If we see a skinny pillar in the findObjects, then we set a special return code in the findObjects function, and have a goto that initiates the parking sequence
-
         //Repeatedly scan, find objects, and move forward accordingly. If bump sensors are triggered, stop, back
         //up, and turn, but don't move forward. Repeat sequence and essentially bounce around testing area until
         //cliff sensors pick up blue tape that mark the end zone, which will then trigger the parking sequence
@@ -375,7 +378,7 @@ void main() {
             //Do initial scan
             scanSweep(scan);
             int numObjs = findObjects(scan, robot);
-            //TODO skinny post found sequence
+            //Realize that this condition never gets checked if we have skinnyPostFound == -1 as the outer while condition
             if (skinnyPostFound != -1) {
                 uart_sendStr("!PARKING SEQUENCE INITIATED\r\n");
                 break;
@@ -436,7 +439,9 @@ void main() {
             }
         }
 
-        //removed skinnyPostFound == -1
+        /*
+         * This is manual mode, which we used to complete the demo
+         */
         while (goCmd && manualMode) {
             if (manualMode == 0) {
                 uart_sendStr("!ENTERING AUTONOMOUS MODE\r\n");
@@ -493,7 +498,8 @@ void main() {
 
         //removed skinnyPostFound != -1
         //Our parking zone detected logic
-        while (goCmd && 0) {
+        //We encountered major issues getting this to work, which is the primary reason we did not do autonomous for the demo
+        while (goCmd && skinnyPostFound) {
             //Start by running a scan. If we see skinny objects, they will be logged into the skinnyObjects array.
             //Go through that and see how many we have. If we have 1, go towards the object. If we have 2 then shoot the gap
             scanSweep(scan);
@@ -572,7 +578,7 @@ void main() {
             }
         }
 
-        //Emergency stop code
+        //Emergency stop/program completed procedure
         if (goCmd == 0) {
             oi_setWheels(0, 0);
             lcd_printf("Program exited/\nDestination found");
